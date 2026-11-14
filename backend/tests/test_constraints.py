@@ -133,12 +133,21 @@ def test_review_rating_range(db, world):
                           restaurant_id=w["rest"].id, rating=rating))
 
 
-def test_one_reminder_per_type_per_order(db, world):
+def test_reminder_event_key_is_unique(db, world):
+    """The database itself rejects a second reminder for the same event (order + type, or
+    for owner reminders order + type + status period)."""
     oid = world["order"].id
-    db.add(ReminderLog(order_id=oid, reminder_type=ReminderType.ORDER_READY))
+    key = lambda kind, suffix="": f"{oid}:{kind.value}{suffix}"  # noqa: E731
+    db.add(ReminderLog(order_id=oid, reminder_type=ReminderType.ORDER_READY, event_key=key(ReminderType.ORDER_READY)))
     db.commit()
-    _fails(db, ReminderLog(order_id=oid, reminder_type=ReminderType.ORDER_READY))
-    db.add(ReminderLog(order_id=oid, reminder_type=ReminderType.REVIEW_REQUEST))  # other type is fine
+    _fails(db, ReminderLog(order_id=oid, reminder_type=ReminderType.ORDER_READY, event_key=key(ReminderType.ORDER_READY)))
+    db.add(ReminderLog(order_id=oid, reminder_type=ReminderType.REVIEW_REQUEST, event_key=key(ReminderType.REVIEW_REQUEST)))
+    db.commit()
+    stale = ReminderType.ORDER_STALE
+    db.add(ReminderLog(order_id=oid, reminder_type=stale, event_key=key(stale, ":placed:2026-01-01T10:00")))
+    db.commit()
+    _fails(db, ReminderLog(order_id=oid, reminder_type=stale, event_key=key(stale, ":placed:2026-01-01T10:00")))
+    db.add(ReminderLog(order_id=oid, reminder_type=stale, event_key=key(stale, ":accepted:2026-01-01T10:20")))  # new period
     db.commit()
 
 

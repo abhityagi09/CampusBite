@@ -52,12 +52,12 @@ def test_request_and_approve_refund_creates_reversal(client, owner, customer, de
     assert entries[1]["reference"] == refund_service.refund_reference(uuid.UUID(rid))
 
 
-def test_reject_then_new_request_allowed(client, owner, customer, delivered):
+def test_rejected_request_cannot_be_refiled(client, owner, customer, delivered):
     rid = req(client, customer, delivered).json()["id"]
     assert decide(client, owner, rid, "reject").json()["status"] == "rejected"
-    assert client.get(f"/api/v1/orders/{delivered}/payment", headers=customer).json()["status"] == "paid"
+    assert client.get(f"/api/v1/orders/{delivered}/payment", headers=customer).json()["status"] == "mock_paid"
     assert len(ledger(client, customer, delivered)) == 1  # no reversal
-    assert req(client, customer, delivered).status_code == 201
+    assert req(client, customer, delivered).status_code == 409  # one request per order, ever
 
 
 def test_duplicate_requests_and_refunds_prevented(client, owner, customer, delivered):
@@ -117,7 +117,7 @@ def test_failure_during_approval_rolls_back_everything(client, owner, customer, 
     assert decide(client, owner, rid, "approve").status_code == 500
 
     assert client.get("/api/v1/refund-requests/me", headers=customer).json()["items"][0]["status"] == "requested"
-    assert client.get(f"/api/v1/orders/{delivered}/payment", headers=customer).json()["status"] == "paid"
+    assert client.get(f"/api/v1/orders/{delivered}/payment", headers=customer).json()["status"] == "mock_paid"
     assert len(ledger(client, customer, delivered)) == 1
 
     monkeypatch.undo()

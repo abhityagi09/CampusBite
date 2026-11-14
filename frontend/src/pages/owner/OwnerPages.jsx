@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { ClipboardList, IndianRupee, RefreshCw, Star, Store } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BellRing, CheckCircle2, ClipboardList, Hourglass, IndianRupee, RefreshCw, Star, Store } from "lucide-react";
 import { errorMessage, fieldErrors } from "../../api/client";
-import { orderApi, refundApi, restaurantApi, statsApi, userApi } from "../../api/endpoints";
+import { orderApi, refundApi, reminderApi, restaurantApi, statsApi, userApi } from "../../api/endpoints";
 import { DashboardShell } from "../../components/Layout";
 import {
   Alert, Button, EmptyState, ErrorState, Input, Modal, PageHeader, Pagination, Select, Skeleton, Stat,
-  StatusBadge, Textarea,
+  StatusBadge, Textarea, useConfirm,
 } from "../../components/ui";
 import { useAsync } from "../../hooks/useAsync";
 import { ORDER_STATUS, REFUND_STATUS, dateTime, money } from "../../utils/format";
@@ -14,14 +14,33 @@ import { ORDER_STATUS, REFUND_STATUS, dateTime, money } from "../../utils/format
 
 export function OwnerDashboardPage() {
   const { data: s, error, reload } = useAsync(() => statsApi.owner(), []);
+  const [rOffset, setROffset] = useState(0);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const reminders = useAsync(() => reminderApi.list({ limit: 5, offset: rOffset, unread_only: unreadOnly }), [rOffset, unreadOnly]);
+  const unread = useAsync(() => reminderApi.unreadCount(), []);
+  const [readBusy, setReadBusy] = useState(null);
+  // Reminders are created by the background worker: poll every minute while the dashboard is open.
+  useEffect(() => {
+    const t = setInterval(() => { reminders.reload(); unread.reload(); }, 60000);
+    return () => clearInterval(t);
+  }, [reminders.reload, unread.reload]);
+  const markRead = async (id) => {
+    setReadBusy(id);
+    try { await reminderApi.markRead(id); reminders.reload(); unread.reload(); }
+    finally { setReadBusy(null); }
+  };
+  const minutesSince = (t) => Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 60000));
+  const count = (...keys) => keys.reduce((n, k) => n + (s?.orders_by_status[k] || 0), 0);
   return (
     <DashboardShell>
-      <PageHeader title="Dashboard" actions={<Button variant="ghost" size="sm" onClick={reload}><RefreshCw size={16} /> Refresh</Button>} />
+      <PageHeader title="Dashboard" actions={<Button variant="ghost" size="sm" onClick={() => { reload(); reminders.reload(); unread.reload(); }}><RefreshCw size={16} /> Refresh</Button>} />
       {error ? <ErrorState error={error} onRetry={reload} /> : !s ? <Skeleton h={240} /> : (
         <>
           <div className="stats">
             <Stat icon={Store} label="Restaurants" value={s.restaurant_count} />
-            <Stat icon={ClipboardList} label="Orders" value={s.total_orders} />
+            <Stat icon={ClipboardList} label="Total orders" value={s.total_orders} />
+            <Stat icon={Hourglass} label="Pending" value={count("placed", "accepted", "preparing", "ready_for_pickup", "out_for_delivery")} />
+            <Stat icon={CheckCircle2} label="Completed" value={count("delivered")} />
             <Stat icon={IndianRupee} label="Net revenue" value={money(s.net_revenue)} />
             <Stat icon={Star} label="Rating" value={s.average_rating != null ? `${s.average_rating} (${s.review_count})` : "—"} />
           </div>
@@ -32,6 +51,43 @@ export function OwnerDashboardPage() {
                 Object.entries(s.orders_by_status).map(([k, v]) => <span key={k}><StatusBadge status={k} map={ORDER_STATUS} /> {v}</span>)}
             </div>
             <p className="muted small">Revenue {money(s.revenue)} (delivered orders) − refunds {money(s.refunded)}.</p>
+          </div>
+          <div className="card" aria-live="polite">
+            <div className="row between wrap">
+              <h3><BellRing size={18} className="accent" /> Idle-order reminders
+                {unread.data?.unread > 0 && <span className="badge badge-bad" style={{ marginLeft: 8 }}>{unread.data.unread} unread</span>}</h3>
+              <label className="check"><input type="checkbox" checked={unreadOnly}
+                onChange={(e) => { setUnreadOnly(e.target.checked); setROffset(0); }} /> Unread only</label>
+            </div>
+            <p className="muted small">Created automatically when an order stays placed or accepted for more than 15 minutes.</p>
+            {reminders.error ? <ErrorState error={reminders.error} onRetry={reminders.reload} />
+              : !reminders.data ? <Skeleton h={60} />
+              : reminders.data.items.length === 0 ? <p className="muted">{unreadOnly ? "No unread reminders." : "No orders have been left waiting."}</p>
+              : (
+                <>
+                  {reminders.data.items.map((r) => (
+                    <div className={`order-row reminder ${r.is_read ? "" : "unread"}`} key={r.id}>
+                      <div>
+                        {!r.is_read && <span className="dot" aria-label="Unread" />}
+                        <strong>#{r.order_id.slice(-8)}</strong> · {r.restaurant_name}
+                        <div className="muted small">
+                          Idle in <b>{ORDER_STATUS[r.status_snapshot]?.label || r.status_snapshot}</b> since {dateTime(r.status_updated_at_snapshot)}
+                          {r.still_waiting ? ` · still waiting (${minutesSince(r.status_updated_at_snapshot)} min)` : " · handled since"}
+                          <br />Reminder {dateTime(r.created_at)}
+                        </div>
+                      </div>
+                      <div className="row">
+                        <StatusBadge status={r.current_order_status} map={ORDER_STATUS} />
+                        {!r.is_read && (
+                          <Button size="sm" variant="ghost" loading={readBusy === r.id} onClick={() => markRead(r.id)}
+                            aria-label={`Mark reminder for order ${r.order_id.slice(-8)} as read`}>Mark read</Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <Pagination total={reminders.data.total} limit={5} offset={rOffset} onChange={setROffset} />
+                </>
+              )}
           </div>
           <div className="card table-wrap">
             <h3>Restaurant performance</h3>
@@ -69,19 +125,22 @@ const OWNER_NEXT = {
   accepted: [["preparing", "Start preparing"], ["rejected", "Reject"]],
   preparing: [["ready_for_pickup", "Mark ready"]],
 };
-const ASSIGNABLE = ["accepted", "preparing", "ready_for_pickup"];
+const ASSIGNABLE = ["ready_for_pickup"]; // backend: couriers are assigned only to READY orders
 const LIMIT = 15;
 
 export function OwnerOrdersPage() {
   const [status, setStatus] = useState("placed");
+  const [range, setRange] = useState({ created_from: "", created_to: "" });
   const [offset, setOffset] = useState(0);
-  const orders = useAsync(() => orderApi.list({ status, limit: LIMIT, offset }), [status, offset]);
+  const orders = useAsync(() => orderApi.list({ status, ...range, limit: LIMIT, offset }), [status, range, offset]);
+  const [confirm, confirmDialog] = useConfirm();
   const couriers = useAsync(() => userApi.deliveryPartners(), []);
   const refunds = useAsync(() => refundApi.incoming({ status: "requested", limit: 50 }), []);
   const [busyId, setBusyId] = useState(null);
   const [msg, setMsg] = useState(null);
 
-  const act = async (id, fn, ok) => {
+  const act = async (id, fn, ok, ask) => {
+    if (ask && !(await confirm(ask))) return;
     setBusyId(id);
     try {
       await fn();
@@ -101,6 +160,7 @@ export function OwnerOrdersPage() {
     <DashboardShell>
       <PageHeader title="Orders" actions={<Button variant="ghost" size="sm" onClick={() => { orders.reload(); refunds.reload(); }}><RefreshCw size={16} /> Refresh</Button>} />
       <Alert tone={msg?.tone}>{msg?.text}</Alert>
+      {confirmDialog}
 
       {refunds.data?.items.length > 0 && (
         <div className="card">
@@ -110,8 +170,10 @@ export function OwnerOrdersPage() {
               <div><strong>{r.reason}</strong><div className="muted small">Order #{r.order_id.slice(-8)} · {dateTime(r.created_at)}</div></div>
               <div className="row">
                 <StatusBadge status={r.status} map={REFUND_STATUS} />
-                <Button size="sm" loading={busyId === r.id} onClick={() => act(r.id, () => refundApi.decide(r.id, "approve"), "Refund approved and processed.")}>Approve</Button>
-                <Button size="sm" variant="ghost" disabled={busyId === r.id} onClick={() => act(r.id, () => refundApi.decide(r.id, "reject"), "Refund rejected.")}>Reject</Button>
+                <Button size="sm" loading={busyId === r.id} onClick={() => act(r.id, () => refundApi.decide(r.id, "approve"), "Refund approved and processed.",
+                  { title: "Approve refund?", message: "The full payment is refunded to the customer. This can't be undone.", confirmLabel: "Approve refund" })}>Approve</Button>
+                <Button size="sm" variant="ghost" disabled={busyId === r.id} onClick={() => act(r.id, () => refundApi.decide(r.id, "reject"), "Refund rejected.",
+                  { title: "Reject refund?", message: "The customer cannot file another request for this order.", confirmLabel: "Reject", danger: true })}>Reject</Button>
               </div>
             </div>
           ))}
@@ -123,6 +185,10 @@ export function OwnerOrdersPage() {
           <button key={s} role="tab" aria-selected={status === s} className={status === s ? "active" : ""}
             onClick={() => { setStatus(s); setOffset(0); }}>{s ? ORDER_STATUS[s].label : "All"}</button>
         ))}
+      </div>
+      <div className="filters">
+        <Input name="created_from" type="date" label="From" value={range.created_from} onChange={(e) => { setRange({ ...range, created_from: e.target.value }); setOffset(0); }} />
+        <Input name="created_to" type="date" label="To" value={range.created_to} onChange={(e) => { setRange({ ...range, created_to: e.target.value }); setOffset(0); }} />
       </div>
       {orders.error ? <ErrorState error={orders.error} onRetry={orders.reload} />
         : !orders.data ? <Skeleton h={200} />
@@ -140,7 +206,8 @@ export function OwnerOrdersPage() {
                 <div className="row wrap">
                   {(OWNER_NEXT[o.status] || []).map(([next, label]) => (
                     <Button key={next} size="sm" variant={next === "rejected" ? "danger" : "primary"} loading={busyId === o.id}
-                      onClick={() => act(o.id, () => orderApi.setStatus(o.id, next), `Order ${ORDER_STATUS[next].label.toLowerCase()}.`)}>{label}</Button>
+                      onClick={() => act(o.id, () => orderApi.setStatus(o.id, next), `Order ${ORDER_STATUS[next].label.toLowerCase()}.`,
+                        next === "rejected" ? { title: "Reject this order?", message: "The customer is refunded automatically.", confirmLabel: "Reject order", danger: true } : null)}>{label}</Button>
                   ))}
                   {ASSIGNABLE.includes(o.status) && (
                     <Select name={`courier-${o.id}`} aria-label="Assign courier" value={o.delivery_partner_id || ""}
@@ -170,6 +237,7 @@ export function OwnerRestaurantsPage() {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [confirm, confirmDialog] = useConfirm();
 
   const open = (kind, restaurant, item) => {
     setErrors({});
@@ -209,7 +277,8 @@ export function OwnerRestaurantsPage() {
     }
   };
 
-  const quick = async (fn, ok) => {
+  const quick = async (fn, ok, ask) => {
+    if (ask && !(await confirm(ask))) return;
     try { await fn(); setMsg({ tone: "ok", text: ok }); reload(); }
     catch (err) { setMsg({ tone: "bad", text: errorMessage(err) }); }
   };
@@ -218,6 +287,7 @@ export function OwnerRestaurantsPage() {
     <DashboardShell>
       <PageHeader title="Restaurants & menus" actions={<Button onClick={() => open("restaurant")}>New restaurant</Button>} />
       <Alert tone={msg?.tone}>{msg?.text}</Alert>
+      {confirmDialog}
       {error ? <ErrorState error={error} onRetry={reload} />
         : !data ? <Skeleton h={200} />
         : data.items.length === 0 ? <EmptyState title="No restaurants yet" icon={Store}>Create your first restaurant to start selling.</EmptyState>
@@ -249,7 +319,8 @@ export function OwnerRestaurantsPage() {
                         <Button size="sm" variant="ghost" onClick={() => open("item", r, m)}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => quick(() => restaurantApi.setItemAvailable(r.id, m.id, !m.is_available), m.is_available ? "Dish disabled." : "Dish enabled.")}>
                           {m.is_available ? "Disable" : "Enable"}</Button>
-                        <Button size="sm" variant="danger" onClick={() => quick(() => restaurantApi.deleteItem(r.id, m.id), "Dish removed (kept as disabled if it was ever ordered).")}>Delete</Button>
+                        <Button size="sm" variant="danger" onClick={() => quick(() => restaurantApi.deleteItem(r.id, m.id), "Dish removed (kept as disabled if it was ever ordered).",
+                          { title: `Delete ${m.name}?`, message: "Dishes that appear in past orders are disabled instead of deleted.", confirmLabel: "Delete", danger: true })}>Delete</Button>
                       </td>
                     </tr>
                   ))}

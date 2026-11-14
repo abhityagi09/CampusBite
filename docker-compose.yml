@@ -58,6 +58,39 @@ services:
       retries: 5
       start_period: 15s
 
+  # Reminder worker: runs every minute, independent of HTTP traffic. Exactly one is needed;
+  # extra copies are harmless (PostgreSQL advisory lock + UNIQUE event keys).
+  scheduler:
+    build:
+      context: ./backend
+    container_name: campusbite-scheduler
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DATABASE_URL: ""
+    command: ["python", "-m", "app.worker"]
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/backend
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api/v1   # called by the user's browser
+    container_name: campusbite-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"   # http://localhost:3000 (in the backend's default CORS_ORIGINS)
+
 volumes:
   # Named volume: data survives `docker compose down` and container rebuilds.
   # Only `docker compose down -v` deletes it.

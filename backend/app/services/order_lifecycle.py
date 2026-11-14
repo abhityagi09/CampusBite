@@ -5,7 +5,7 @@
     ready_for_pickup --assigned courier--> out_for_delivery ("picked_up")
     out_for_delivery --assigned courier--> delivered
 
-    customer may cancel  : pending_payment, placed, accepted   (before preparation)
+    customer may cancel  : pending_payment, placed               (nothing accepted yet)
     owner may reject     : placed, accepted                    (before preparation)
     delivered / cancelled / rejected are terminal.
 
@@ -45,15 +45,14 @@ TRANSITIONS: dict[OrderStatus, dict[OrderStatus, frozenset[Actor]]] = {
     S.ACCEPTED: {
         S.PREPARING: frozenset({Actor.OWNER}),
         S.REJECTED: frozenset({Actor.OWNER}),
-        S.CANCELLED: frozenset({Actor.CUSTOMER}),
     },
     S.PREPARING: {S.READY_FOR_PICKUP: frozenset({Actor.OWNER})},
     S.READY_FOR_PICKUP: {S.OUT_FOR_DELIVERY: frozenset({Actor.COURIER})},
     S.OUT_FOR_DELIVERY: {S.DELIVERED: frozenset({Actor.COURIER})},
 }
 TERMINAL = frozenset({S.DELIVERED, S.CANCELLED, S.REJECTED})
-# Owners may (re)assign a courier from acceptance until pickup.
-ASSIGNABLE = frozenset({S.ACCEPTED, S.PREPARING, S.READY_FOR_PICKUP})
+# Owners (re)assign a courier only once the food is ready, until it is picked up.
+ASSIGNABLE = frozenset({S.READY_FOR_PICKUP})
 
 
 def check_transition(current: OrderStatus, new: OrderStatus, actor: Actor) -> None:

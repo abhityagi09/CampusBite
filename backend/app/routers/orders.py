@@ -88,10 +88,12 @@ def list_orders(
     status_filter: OrderStatus | None = Query(None, alias="status"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    created_from: date | None = Query(None, description="Inclusive, YYYY-MM-DD (UTC)"),
+    created_to: date | None = Query(None, description="Inclusive, YYYY-MM-DD (UTC)"),
 ):
     """Customers: own orders. Owners: orders for their restaurants.
     Delivery partners: orders assigned to them."""
-    return svc.list_orders(db, user, status_filter, limit, offset)
+    return svc.list_orders(db, user, status_filter, limit, offset, created_from, created_to)
 
 
 # Must be declared before "/{order_id}"

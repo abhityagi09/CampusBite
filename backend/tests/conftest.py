@@ -15,6 +15,8 @@ os.environ["SECRET_KEY"] = "test-secret-key-that-is-long-enough-for-hs256-012345
 os.environ["BCRYPT_ROUNDS"] = "4"  # fast hashing in tests only
 STAFF_KEY = "test-staff-registration-key"
 os.environ["STAFF_REGISTRATION_KEY"] = STAFF_KEY
+os.environ["REMINDER_SCHEDULER_ENABLED"] = "false"  # the worker never runs inside tests
+os.environ["OPENAI_API_KEY"] = ""  # AI tests configure it explicitly
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -160,12 +162,11 @@ def deliver(client, owner, customer, courier, restaurant, items=(("Burger", 2), 
     oid = place_order(client, customer, restaurant, items)["id"]
     assert pay(client, customer, oid).status_code == 200
     courier_id = client.get("/api/v1/auth/me", headers=courier).json()["id"]
-    assert set_status(client, owner, oid, "accepted").status_code == 200
+    for s in ("accepted", "preparing", "ready_for_pickup"):
+        assert set_status(client, owner, oid, s).status_code == 200
     r = client.post(f"/api/v1/orders/{oid}/assign-delivery",
                     json={"delivery_partner_id": courier_id}, headers=owner)
     assert r.status_code == 200, r.text
-    for s in ("preparing", "ready_for_pickup"):
-        assert set_status(client, owner, oid, s).status_code == 200
     for s in ("out_for_delivery", "delivered"):
         assert set_status(client, courier, oid, s).status_code == 200
     return oid

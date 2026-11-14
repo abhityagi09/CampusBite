@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models.enums import OrderStatus, PaymentMethod
 from app.schemas.payment import PaymentRead
+from app.schemas.refund import RefundRequestRead
+from app.schemas.review import ReviewRead
 
 
 class OrderItemCreate(BaseModel):
@@ -73,6 +75,7 @@ class OrderRead(BaseModel):
     restaurant_id: UUID
     delivery_partner_id: UUID | None
     status: OrderStatus
+    status_updated_at: datetime
     total_amount: Decimal
     delivery_address: str
     notes: str | None
@@ -84,6 +87,8 @@ class OrderRead(BaseModel):
 class OrderDetail(OrderRead):
     events: list[StatusEventRead]  # audit history: every status, who set it, when
     payment: PaymentRead | None
+    review: ReviewRead | None = None
+    refund_requests: list[RefundRequestRead] = []
 
     @computed_field
     @property

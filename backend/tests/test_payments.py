@@ -9,7 +9,7 @@ def test_successful_payment_places_order(client, customer, restaurant):
     resp = pay(client, customer, order["id"])
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "paid"
+    assert data["status"] == "mock_paid"
     assert data["transaction_ref"].startswith("SIM-")
     assert Decimal(data["amount"]) == Decimal(order["total_amount"])
     assert client.get(f"/api/v1/orders/{order['id']}", headers=customer).json()["status"] == "placed"
@@ -24,7 +24,7 @@ def test_failed_payment_can_be_retried(client, customer, restaurant):
 
     retry = pay(client, customer, oid)
     assert retry.status_code == 200
-    assert retry.json()["status"] == "paid"
+    assert retry.json()["status"] == "mock_paid"
     assert retry.json()["id"] == failed["id"]  # same payment row reused
 
 

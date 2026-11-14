@@ -5,7 +5,7 @@ import { errorMessage, statusOf } from "../api/client";
 import { orderApi, refundApi, reviewApi } from "../api/endpoints";
 import {
   Alert, Button, EmptyState, ErrorState, Input, Modal, PageHeader, Pagination, Select, Skeleton,
-  StatusBadge, Textarea,
+  StarRating, StatusBadge, Textarea,
 } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import {
@@ -88,11 +88,10 @@ export function OrderDetailPage() {
   const { id } = useParams();
   const location = useLocation();
   const order = useAsync(() => orderApi.get(id), [id]);
-  const refunds = useAsync(() => refundApi.mine({ limit: 100 }), [id]);
   const [modal, setModal] = useState(null); // "cancel" | "review" | "refund" | "pay"
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ tone: "ok", text: location.state?.placed ? "Order placed and paid. 🎉" : "" });
-  const [review, setReview] = useState({ rating: "5", comment: "" });
+  const [review, setReview] = useState({ rating: 0, comment: "" });
   const [reason, setReason] = useState("");
   const [method, setMethod] = useState("upi");
   const o = order.data;
@@ -110,10 +109,11 @@ export function OrderDetailPage() {
       : <ErrorState error={order.error} onRetry={order.reload} />;
   if (!o) return <Skeleton h={300} />;
 
-  const myRefunds = (refunds.data?.items || []).filter((r) => r.order_id === o.id);
-  const openRefund = myRefunds.find((r) => ["requested", "approved"].includes(r.status));
+  // Both come from the order itself (server state), so duplicates are impossible to offer.
+  const myRefunds = o.refund_requests || [];
   const canCancel = ["pending_payment", "placed"].includes(o.status);
-  const canRefund = o.status === "delivered" && o.payment?.status === "paid" && !openRefund;
+  const canReview = o.status === "delivered" && !o.review;
+  const canRefund = o.status === "delivered" && o.payment?.status === "mock_paid" && myRefunds.length === 0;
 
   const run = async (fn, ok) => {
     setBusy(true);
@@ -122,7 +122,6 @@ export function OrderDetailPage() {
       setMsg({ tone: "ok", text: ok });
       setModal(null);
       order.reload();
-      refunds.reload();
     } catch (err) {
       setMsg({ tone: "bad", text: errorMessage(err) });
       setModal(null);
@@ -170,13 +169,16 @@ export function OrderDetailPage() {
               {o.payment.transaction_ref && <span className="muted"> · ref {o.payment.transaction_ref}</span>}
             </p>
           )}
+          {o.review && (
+            <p className="small">Your review: <span className="rating">{"★".repeat(o.review.rating)}</span> {o.review.comment}</p>
+          )}
           {myRefunds.map((r) => (
             <p className="small" key={r.id}><StatusBadge status={r.status} map={REFUND_STATUS} /> <span className="muted">{r.reason}</span></p>
           ))}
           <div className="row wrap">
             {o.status === "pending_payment" && <Button onClick={() => setModal("pay")}>Pay now</Button>}
             {canCancel && <Button variant="danger" onClick={() => setModal("cancel")}>Cancel order</Button>}
-            {o.status === "delivered" && <Button variant="ghost" onClick={() => setModal("review")}>Write a review</Button>}
+            {canReview && <Button variant="ghost" onClick={() => setModal("review")}>Write a review</Button>}
             {canRefund && <Button variant="ghost" onClick={() => setModal("refund")}>Request refund</Button>}
           </div>
         </div>
@@ -196,18 +198,17 @@ export function OrderDetailPage() {
       </Modal>
 
       <Modal open={modal === "review"} title="Rate your order" onClose={() => setModal(null)}
-        footer={<Button loading={busy} onClick={() => run(() => reviewApi.create({
+        footer={<Button loading={busy} disabled={!review.rating} onClick={() => run(() => reviewApi.create({
           order_id: o.id, rating: Number(review.rating), ...(review.comment.trim() ? { comment: review.comment.trim() } : {}),
         }), "Thanks for your review!")}>Submit review</Button>}>
-        <Select name="rating" label="Rating" value={review.rating} onChange={(e) => setReview({ ...review, rating: e.target.value })}
-          options={[5, 4, 3, 2, 1].map((n) => ({ value: String(n), label: "★".repeat(n) }))} />
+        <StarRating value={review.rating} onChange={(rating) => setReview({ ...review, rating })} />
         <Textarea name="comment" label="Comment (optional)" maxLength={1000} value={review.comment}
           onChange={(e) => setReview({ ...review, comment: e.target.value })} />
       </Modal>
 
       <Modal open={modal === "refund"} title="Request a refund" onClose={() => setModal(null)}
-        footer={<Button loading={busy} disabled={!reason.trim()} onClick={() => run(() => refundApi.request(o.id, reason.trim()), "Refund requested. The restaurant will review it.")}>Send request</Button>}>
-        <Textarea name="reason" label="What went wrong?" maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} />
+        footer={<Button loading={busy} disabled={reason.trim().length < 5} onClick={() => run(() => refundApi.request(o.id, reason.trim()), "Refund requested. The restaurant will review it.")}>Send request</Button>}>
+        <Textarea name="reason" label="What went wrong? (required)" hint="At least 5 characters. Only one refund request is allowed per order." maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Modal>
     </>
   );

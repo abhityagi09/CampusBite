@@ -61,6 +61,17 @@ export const statsApi = {
   me: () => d(api.get("/statistics/me")),
 };
 
+export const aiApi = {
+  ask: (question) => d(api.post("/ai/insights", question ? { question } : {}, { timeout: 60000 })),
+  summary: () => d(api.get("/ai/summary", { timeout: 60000 })),
+};
+
+export const reminderApi = {
+  list: (params) => d(api.get("/owner/reminders", { params: clean(params) })),
+  unreadCount: () => d(api.get("/owner/reminders/unread-count")),
+  markRead: (id) => d(api.patch(`/owner/reminders/${id}/read`)),
+};
+
 export const userApi = {
   deliveryPartners: () => d(api.get("/users/delivery-partners")),
 };

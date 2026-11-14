@@ -57,3 +57,21 @@ class BadGatewayError(AppError):
 
     status_code = 502
     default_detail = "Payment provider unavailable. Nothing was charged; please retry."
+
+
+class TooManyRequestsError(AppError):
+    status_code = 429
+    default_detail = "Too many requests. Please wait and try again."
+
+    def __init__(self, detail: str | None = None, retry_after: int = 30):
+        super().__init__(detail, headers={"Retry-After": str(retry_after)})
+
+
+class ServiceUnavailableError(AppError):
+    status_code = 503
+    default_detail = "Service unavailable"
+
+
+class GatewayTimeoutError(AppError):
+    status_code = 504
+    default_detail = "Upstream service timed out"

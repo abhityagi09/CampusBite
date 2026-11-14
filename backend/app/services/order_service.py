@@ -35,7 +35,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.models.mixins import uuid7
+from app.models.mixins import utcnow, uuid7
 from app.schemas.common import Page
 from app.schemas.order import OrderCreate, OrderRead
 from app.services import order_lifecycle as lifecycle
@@ -53,6 +53,8 @@ _LOAD = (
     selectinload(Order.events),
     selectinload(Order.payment),
     selectinload(Order.restaurant),
+    selectinload(Order.review),
+    selectinload(Order.refund_requests),
 )
 
 
@@ -95,7 +97,9 @@ def get_order_for_user(db: Session, order_id: UUID, user: User) -> Order:
 def apply_status(order: Order, new_status: OrderStatus, actor: User) -> None:
     """Change status, record history, and refund a paid order if it ended unfulfilled.
     The caller commits."""
-    order.status = new_status
+    if order.status != new_status:  # (a compare-and-set caller already wrote both)
+        order.status = new_status
+        order.status_updated_at = utcnow()
     order.events.append(OrderStatusEvent(status=new_status, actor_id=actor.id))
     if (
         new_status in REFUND_ON
@@ -226,6 +230,18 @@ def create_order(db: Session, customer: User, data: OrderCreate) -> Order:
     return checkout(db, customer, data).order
 
 
+def _date_range(stmt, created_from: date | None, created_to: date | None):
+    """Inclusive calendar days (UTC) on Order.created_at."""
+    if created_from and created_to and created_from > created_to:
+        raise UnprocessableError("created_from cannot be after created_to")
+    if created_from is not None:
+        stmt = stmt.where(Order.created_at >= datetime.combine(created_from, time.min, tzinfo=timezone.utc))
+    if created_to is not None:
+        end = datetime.combine(created_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        stmt = stmt.where(Order.created_at < end)
+    return stmt
+
+
 def list_my_orders(
     db: Session,
     customer: User,
@@ -246,12 +262,7 @@ def list_my_orders(
     )
     if status is not None:
         stmt = stmt.where(Order.status == status)
-    if created_from is not None:
-        start = datetime.combine(created_from, time.min, tzinfo=timezone.utc)
-        stmt = stmt.where(Order.created_at >= start)
-    if created_to is not None:
-        end = datetime.combine(created_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
-        stmt = stmt.where(Order.created_at < end)
+    stmt = _date_range(stmt, created_from, created_to)
     total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
     orders = db.scalars(stmt.limit(page.limit).offset(page.offset)).all()
     return Page(
@@ -336,7 +347,7 @@ def _transition(db: Session, order: Order, user: User, new: OrderStatus, actor: 
     audit event (and refund if needed) in the same transaction."""
     current = order.status
     lifecycle.check_transition(current, new, actor)
-    lifecycle.compare_and_set(db, order, current, status=new)
+    lifecycle.compare_and_set(db, order, current, status=new, status_updated_at=utcnow())
     apply_status(order, new, user)  # status already set: adds event + refund only
     db.commit()
     return reload_order(db, order.id)
@@ -443,6 +454,8 @@ def list_orders(
     status: OrderStatus | None,
     limit: int,
     offset: int,
+    created_from: date | None = None,
+    created_to: date | None = None,
 ) -> list[Order]:
     stmt = (
         select(Order)
@@ -461,6 +474,7 @@ def list_orders(
         stmt = stmt.where(Order.delivery_partner_id == user.id)
     if status is not None:
         stmt = stmt.where(Order.status == status)
+    stmt = _date_range(stmt, created_from, created_to)
     return list(db.scalars(stmt.limit(limit).offset(offset)).all())
 
 

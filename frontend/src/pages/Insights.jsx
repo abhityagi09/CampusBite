@@ -5,6 +5,7 @@ import { Button, ErrorState, PageHeader, Skeleton } from "../components/ui";
 import { useAuth } from "../contexts/AuthContext";
 import { useAsync } from "../hooks/useAsync";
 import { money } from "../utils/format";
+import { AiInsightsPage } from "./AiInsights";
 
 /*
  * Insights are deterministic rules applied to the caller's real /statistics data.
@@ -53,7 +54,11 @@ function courierInsights(s) {
 
 export function InsightsPage() {
   const { user } = useAuth();
-  const load = { owner: statsApi.owner, customer: statsApi.customer, delivery_partner: statsApi.me }[user.role];
+  return user.role === "customer" ? <AiInsightsPage /> : <StatsInsights user={user} />;
+}
+
+function StatsInsights({ user }) {
+  const load = { owner: statsApi.owner, delivery_partner: statsApi.me }[user.role];
   const { data, error, reload, loading } = useAsync(() => load(), [user.role]);
   const insights = data && { owner: ownerInsights, customer: customerInsights, delivery_partner: courierInsights }[user.role](data);
   const body = (
@@ -67,5 +72,5 @@ export function InsightsPage() {
       )}
     </>
   );
-  return user.role === "customer" ? body : <DashboardShell>{body}</DashboardShell>;
+  return <DashboardShell>{body}</DashboardShell>;
 }

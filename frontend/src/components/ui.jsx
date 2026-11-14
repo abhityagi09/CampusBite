@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, Inbox, Loader2, RotateCw, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Inbox, Loader2, RotateCw, Star, X } from "lucide-react";
 import { errorMessage } from "../api/client";
 
 export function Button({ variant = "primary", size, loading, children, className = "", ...props }) {
@@ -149,3 +149,33 @@ export const Stat = ({ label, value, icon: Icon }) => (
     <strong>{value}</strong>
   </div>
 );
+
+/** const [confirm, dialog] = useConfirm(); if (await confirm({title, message, danger})) ... ; render {dialog} */
+export function useConfirm() {
+  const [state, setState] = useState(null);
+  const confirm = (opts) => new Promise((resolve) => setState({ ...opts, resolve }));
+  const close = (v) => { state?.resolve(v); setState(null); };
+  const dialog = (
+    <Modal open={Boolean(state)} title={state?.title} onClose={() => close(false)}
+      footer={<>
+        <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
+        <Button variant={state?.danger ? "danger" : "primary"} onClick={() => close(true)}>{state?.confirmLabel || "Confirm"}</Button>
+      </>}>
+      {state?.message}
+    </Modal>
+  );
+  return [confirm, dialog];
+}
+
+export function StarRating({ value, onChange, label = "Rating" }) {
+  return (
+    <div className="stars" role="radiogroup" aria-label={label}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button type="button" key={n} role="radio" aria-checked={value === n} aria-label={`${n} star${n > 1 ? "s" : ""}`}
+          className={n <= value ? "on" : ""} onClick={() => onChange(n)}>
+          <Star size={28} fill={n <= value ? "currentColor" : "none"} />
+        </button>
+      ))}
+    </div>
+  );
+}

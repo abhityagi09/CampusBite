@@ -60,11 +60,28 @@ class Settings(BaseSettings):
     PAYMENT_SIMULATOR_OUTCOME: Literal["success", "decline", "error"] = "success"
     PAYMENT_SIMULATOR_METHOD_OUTCOMES: str = ""
 
+    # --- Reminders ------------------------------------------------------------
+    # Dedicated reminder worker (`python -m app.worker`, the `scheduler` Compose service).
+    REMINDER_SCHEDULER_ENABLED: bool = True
+    ORDER_REMINDER_CHECK_INTERVAL_SECONDS: int = Field(default=60, ge=5, le=3600)
+    # Owner reminder when an order stays placed/accepted for MORE than this many minutes.
+    ORDER_REMINDER_THRESHOLD_MINUTES: int = Field(default=15, ge=1, le=1440)
+
+    # --- AI insights (OpenAI, called from the backend only) -------------------
+    OPENAI_API_KEY: SecretStr | None = None
+    OPENAI_MODEL: str = "gpt-4.1-mini"
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=120)
+    OPENAI_MAX_RETRIES: int = Field(default=2, ge=0, le=5)  # SDK retries, bounded
+    # Per-customer AI budget: at most N requests per sliding window (both AI endpoints).
+    AI_RATE_LIMIT_REQUESTS: int = Field(default=10, ge=1, le=1000)
+    AI_RATE_LIMIT_WINDOW_SECONDS: int = Field(default=3600, ge=1, le=86400)
+
     # Comma-separated list, e.g. "http://localhost:3000,http://localhost:5173"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     @field_validator(
-        "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB", "DATABASE_URL", mode="before"
+        "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB", "DATABASE_URL", "OPENAI_API_KEY", mode="before"
     )
     @classmethod
     def _empty_means_unset(cls, value):

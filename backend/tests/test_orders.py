@@ -62,7 +62,7 @@ def test_item_from_another_restaurant_rejected(client, make_user, customer, rest
 
 def test_full_happy_path_lifecycle(client, owner, customer, courier, restaurant):
     oid = place_order(client, customer, restaurant)["id"]
-    assert pay(client, customer, oid).json()["status"] == "paid"
+    assert pay(client, customer, oid).json()["status"] == "mock_paid"
 
     assert set_status(client, owner, oid, "accepted").json()["status"] == "accepted"
     assert set_status(client, owner, oid, "preparing").status_code == 200

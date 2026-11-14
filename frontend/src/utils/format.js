@@ -25,16 +25,16 @@ export const ORDER_STATUS = {
 
 export const PAYMENT_STATUS = {
   pending: { label: "Payment pending", tone: "warn" },
-  paid: { label: "Paid", tone: "ok" },
+  mock_paid: { label: "Paid (simulated)", tone: "ok" },
   failed: { label: "Payment failed", tone: "bad" },
   refunded: { label: "Refunded", tone: "muted" },
 };
 
 export const REFUND_STATUS = {
-  requested: { label: "Refund requested", tone: "warn" },
+  requested: { label: "Refund pending", tone: "warn" },
   approved: { label: "Refund approved", tone: "info" },
   rejected: { label: "Refund rejected", tone: "bad" },
-  processed: { label: "Refunded", tone: "ok" },
+  processed: { label: "Refund approved · refunded", tone: "ok" },
 };
 
 /** Customer-facing timeline; ASSIGNED is derived from delivery_partner_id. */

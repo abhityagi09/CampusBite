@@ -28,7 +28,7 @@ export function navFor(role) {
   if (role === "customer")
     items.push(
       { to: "/orders", label: "Orders", icon: ReceiptText },
-      { to: "/insights", label: "Insights", icon: Sparkles }
+      { to: "/insights", label: "AI Insights", icon: Sparkles }
     );
   return items;
 }
