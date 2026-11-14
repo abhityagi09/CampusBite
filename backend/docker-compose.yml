@@ -1,0 +1,64 @@
+# CampusBite: PostgreSQL + backend.
+#
+# All credentials come from backend/.env (copy backend/.env.example). Nothing secret is
+# written in this file.
+#
+# Already have your own docker-compose.yml? Keep it, and make sure it has: a `db` service
+# (postgres image, a named volume on /var/lib/postgresql/data, a pg_isready healthcheck),
+# and on the backend: POSTGRES_HOST=db and depends_on db with condition service_healthy.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: campusbite-db
+    restart: unless-stopped
+    # The postgres image reads POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB from here,
+    # the same variables the backend uses, so there is one place to configure them.
+    env_file: ./backend/.env
+    ports:
+      # Published on this computer only (not the network) so you can run the API with
+      # uvicorn on your host (POSTGRES_HOST=localhost). If 5432 is already in use, change
+      # the LEFT number (e.g. "127.0.0.1:5433:5432") and set POSTGRES_PORT=5433 in
+      # backend/.env. Containers always use db:5432 regardless.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - campusbite_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: campusbite-backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      # Inside Docker the database is reached by its service name, not localhost.
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      # Ignore any stale DATABASE_URL left in .env so the POSTGRES_* values above win.
+      DATABASE_URL: ""
+    # Development: auto-reload on code changes (pairs with the bind mount below).
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/backend # live code reload for development; delete for production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  # Named volume: data survives `docker compose down` and container rebuilds.
+  # Only `docker compose down -v` deletes it.
+  campusbite_pgdata:
