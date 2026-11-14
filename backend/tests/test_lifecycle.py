@@ -18,7 +18,7 @@ O = "/api/v1/orders"
 
 def placed(client, customer, restaurant):
     oid = place_order(client, customer, restaurant)["id"]
-    assert pay(client, customer, oid).json()["status"] == "paid"
+    assert pay(client, customer, oid).json()["status"] == "mock_paid"
     return oid
 
 
@@ -45,9 +45,8 @@ def session():
 
 def test_full_lifecycle_with_audit_and_timestamps(client, owner, customer, courier, restaurant):
     oid = placed(client, customer, restaurant)
-    advance(client, owner, oid, "accepted", "preparing")
+    advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
     assert assign(client, owner, oid, user_id(client, courier)).status_code == 200
-    advance(client, owner, oid, "ready_for_pickup")
     advance(client, courier, oid, "out_for_delivery", "delivered")
 
     order = client.get(f"{O}/{oid}", headers=customer).json()
@@ -126,7 +125,7 @@ def test_unauthorized_status_updates(client, make_user, owner, customer, courier
 # ------------------------------------------------------------------ cancel / reject
 
 
-@pytest.mark.parametrize("before", [[], ["accepted"]])
+@pytest.mark.parametrize("before", [[]])
 def test_customer_can_cancel_before_preparation(client, owner, customer, restaurant, before):
     oid = placed(client, customer, restaurant)
     advance(client, owner, oid, *before)
@@ -135,7 +134,7 @@ def test_customer_can_cancel_before_preparation(client, owner, customer, restaur
     assert resp.json()["payment"]["status"] == "refunded"
 
 
-@pytest.mark.parametrize("path", [["accepted", "preparing"], ["accepted", "preparing", "ready_for_pickup"]])
+@pytest.mark.parametrize("path", [["accepted"], ["accepted", "preparing"], ["accepted", "preparing", "ready_for_pickup"]])
 def test_customer_cannot_cancel_once_preparation_started(client, owner, customer, restaurant, path):
     oid = placed(client, customer, restaurant)
     advance(client, owner, oid, *path)
@@ -164,8 +163,12 @@ def test_owner_reject_only_before_preparation(client, owner, customer, restauran
 def test_assign_delivery_rules(client, make_user, owner, customer, courier, restaurant):
     oid = placed(client, customer, restaurant)
     cid = user_id(client, courier)
-    assert assign(client, owner, oid, cid).status_code == 409  # not accepted yet
+    assert assign(client, owner, oid, cid).status_code == 409  # placed
     advance(client, owner, oid, "accepted")
+    assert assign(client, owner, oid, cid).status_code == 409  # accepted, not ready
+    advance(client, owner, oid, "preparing")
+    assert assign(client, owner, oid, cid).status_code == 409  # still cooking
+    advance(client, owner, oid, "ready_for_pickup")
 
     assert assign(client, make_user("owner", "o2@example.com"), oid, cid).status_code == 404
     assert assign(client, customer, oid, cid).status_code == 403
@@ -187,7 +190,6 @@ def test_assign_delivery_rules(client, make_user, owner, customer, courier, rest
 
     other = make_user("delivery_partner", "c2@example.com")
     assert assign(client, owner, oid, user_id(client, other)).status_code == 200  # reassign
-    advance(client, owner, oid, "preparing", "ready_for_pickup")
     advance(client, other, oid, "out_for_delivery")
     assert assign(client, owner, oid, cid).status_code == 409  # after pickup
 
@@ -197,7 +199,7 @@ def test_deliveries_me(client, make_user, owner, customer, courier, restaurant):
     not_mine = placed(client, customer, restaurant)
     cid = user_id(client, courier)
     for oid in mine:
-        advance(client, owner, oid, "accepted")
+        advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
         assign(client, owner, oid, cid)
     advance(client, owner, not_mine, "accepted")
 
@@ -235,29 +237,28 @@ def test_stale_writer_loses_and_changes_nothing(client, owner, customer, restaur
     order = client.get(f"{O}/{oid}", headers=customer).json()
     assert order["status"] == "accepted"
     assert "rejected" not in [e["status"] for e in order["events"]]
-    assert order["payment"]["status"] == "paid"  # no refund from the losing write
+    assert order["payment"]["status"] == "mock_paid"  # no refund from the losing write
 
 
 def test_customer_cancel_racing_owner_preparation(client, owner, customer, restaurant):
     oid = placed(client, customer, restaurant)
-    advance(client, owner, oid, "accepted")
     db_a = session()
-    stale = _load(db_a, oid)  # customer's view: accepted, still cancellable
+    stale = _load(db_a, oid)  # customer's view: placed, still cancellable
     cust = db_a.scalar(select(User).where(User.email == "customer@example.com"))
 
-    advance(client, owner, oid, "preparing")  # owner starts cooking first
+    advance(client, owner, oid, "accepted")  # owner accepts first
 
     with pytest.raises(ConflictError):
         order_service._transition(db_a, stale, cust, OrderStatus.CANCELLED, Actor.CUSTOMER)
     db_a.close()
-    assert client.get(f"{O}/{oid}", headers=customer).json()["status"] == "preparing"
+    assert client.get(f"{O}/{oid}", headers=customer).json()["status"] == "accepted"
 
 
 def test_stale_assignment_is_refused(client, make_user, owner, customer, courier, restaurant):
     from app.services import order_lifecycle
 
     oid = placed(client, customer, restaurant)
-    advance(client, owner, oid, "accepted")
+    advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
     db_a = session()
     stale = _load(db_a, oid)  # sees no courier yet
     other = make_user("delivery_partner", "c2@example.com")

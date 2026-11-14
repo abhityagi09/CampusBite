@@ -90,12 +90,8 @@ def request_refund(db: Session, customer: User, order_id: UUID, reason: str) -> 
     if payment is None or payment.status != PaymentStatus.PAID:
         state = "already refunded" if payment and payment.status == PaymentStatus.REFUNDED else "not paid"
         raise ConflictError(f"This order is {state}")
-    if db.scalar(
-        select(RefundRequest.id).where(
-            RefundRequest.order_id == order.id, RefundRequest.status.in_(OPEN)
-        )
-    ):
-        raise ConflictError("A refund request for this order is already open")
+    if db.scalar(select(RefundRequest.id).where(RefundRequest.order_id == order.id)):
+        raise ConflictError("A refund has already been requested for this order")
 
     req = RefundRequest(order_id=order.id, customer_id=customer.id, reason=reason)
     db.add(req)

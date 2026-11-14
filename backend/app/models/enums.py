@@ -29,7 +29,7 @@ class PaymentMethod(StrEnum):
 
 class PaymentStatus(StrEnum):
     PENDING = "pending"
-    PAID = "paid"
+    PAID = "mock_paid"  # dummy gateway only: never a real capture
     FAILED = "failed"
     REFUNDED = "refunded"
 
@@ -61,6 +61,7 @@ class ReminderType(StrEnum):
     PAYMENT_PENDING = "payment_pending"
     ORDER_READY = "order_ready"
     REVIEW_REQUEST = "review_request"
+    ORDER_STALE = "order_stale"  # to the owner: placed/accepted, untouched 15 min
 
 
 def enum_column(enum_cls: type[StrEnum], length: int, name: str) -> Enum:

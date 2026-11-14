@@ -44,6 +44,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint(
             "customer_id", "idempotency_key", name="uq_orders_customer_id_idempotency_key"
         ),
+        Index("ix_orders_status_status_updated_at", "status", "status_updated_at"),
     )
 
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
@@ -63,6 +64,11 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # used with, so a retry with the same key but a different cart is detected.
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    # When the order entered its CURRENT status (set on creation and on every status change,
+    # untouched by other updates). Drives "idle for 15 minutes" reminders.
+    status_updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, server_default=func.now()
+    )
 
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order",
@@ -82,10 +88,10 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="order", order_by="PaymentLedger.created_at, PaymentLedger.id"
     )
     review: Mapped["Review | None"] = relationship(
-        back_populates="order", uselist=False, overlaps="customer,restaurant"
+        back_populates="order", uselist=False, overlaps="customer,restaurant,reviews"
     )
     refund_requests: Mapped[list["RefundRequest"]] = relationship(
-        back_populates="order", overlaps="customer"
+        back_populates="order", overlaps="customer,refund_requests"
     )
     reminder_logs: Mapped[list["ReminderLog"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"

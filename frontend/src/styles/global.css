@@ -169,3 +169,28 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 th { color: var(--muted); font-weight: 600; }
 .insights { list-style: none; padding: 0; margin: 0; }
 .insights li { display: flex; gap: 10px; align-items: flex-start; }
+
+.stars { display: flex; gap: 4px; margin-bottom: 12px; }
+.stars button { border: 0; background: none; color: #d4d4d8; cursor: pointer; padding: 2px; }
+.stars button.on { color: #f5a400; }
+.chat { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
+.bubble { max-width: min(85%, 640px); padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; line-height: 1.45; }
+.bubble.me { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.bubble.ai { align-self: flex-start; background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bubble.err { align-self: flex-start; background: var(--bad-soft); color: var(--bad); }
+.chat-form { display: flex; gap: 8px; align-items: flex-end; position: sticky; bottom: 72px; background: var(--bg); padding: 8px 0; }
+.chat-form .field { flex: 1; margin: 0; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.suggestions button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 0.45rem 0.85rem; font: inherit; cursor: pointer; }
+.suggestions button:hover { background: var(--accent-soft); }
+@media (min-width: 820px) { .chat-form { bottom: 0; } }
+
+/* keyboard focus */
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offset: 0; }
+.bubble.ai { white-space: normal; }
+.bubble p { margin: 0 0 6px; }
+.bubble ul { margin: 4px 0 6px; padding-left: 20px; }
+.suggestions button { display: inline-flex; align-items: center; gap: 6px; }
+.reminder.unread { background: var(--accent-soft); border-radius: 10px; padding-left: 10px; padding-right: 10px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: middle; }

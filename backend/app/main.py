@@ -34,6 +34,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Could not reach database %s - API started, DB endpoints return 503",
             settings.safe_database_url,
         )
+    # Reminders are NOT scheduled here: the dedicated worker (`python -m app.worker`, the
+    # `scheduler` Compose service) runs them, so API workers never duplicate the job.
     yield
     engine.dispose()
 

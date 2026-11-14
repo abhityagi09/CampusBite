@@ -42,12 +42,12 @@ Frontend function = `frontend/src/api/endpoints.js`.
 |---|---|---|---|---|
 | POST | /orders | customer | `{restaurant_id, items:[{menu_item_id, quantity 1–50}], delivery_address, notes?, payment_method?, expected_total?}` + header `Idempotency-Key` (required with `payment_method`) → 201 OrderDetail (200 + `Idempotent-Replayed` on replay; 402 declined; 409 total changed) | `orderApi.checkout` |
 | GET | /orders/me | customer | `status, created_from, created_to (YYYY-MM-DD, UTC), limit, offset` → Page[Order] | `orderApi.mine` |
-| GET | /orders | signed in | `status, limit, offset` → list (owner: own restaurants, courier: assigned) | `orderApi.list` |
+| GET | /orders | signed in | `status, created_from, created_to, limit, offset` → list (owner: own restaurants, courier: assigned) | `orderApi.list` |
 | GET | /orders/{id} | customer / owner / assigned courier | → OrderDetail (`items, events, payment, status_timestamps, delivery_partner_id`) | `orderApi.get` |
 | GET | /orders/{id}/payment · /tracking | same | Payment · status events | – |
-| POST | /orders/{id}/cancel | customer | allowed in pending_payment, placed, accepted | `orderApi.cancel` |
+| POST | /orders/{id}/cancel | customer | allowed in pending_payment, placed | `orderApi.cancel` |
 | PATCH | /orders/{id}/status | owner / assigned courier | `{status}` (see lifecycle) | `orderApi.setStatus` |
-| POST | /orders/{id}/assign-delivery | owner | `{delivery_partner_id}` (accepted … ready_for_pickup) | `orderApi.assign` |
+| POST | /orders/{id}/assign-delivery | owner | `{delivery_partner_id}` (only when `ready_for_pickup`) | `orderApi.assign` |
 | GET | /users/delivery-partners | owner | → `[{id, name}]` active couriers | `userApi.deliveryPartners` |
 | GET | /orders/available | courier | ready & unassigned → list | `orderApi.available` |
 | POST | /orders/{id}/claim | courier | self-assign a ready order | `orderApi.claim` |
@@ -56,13 +56,13 @@ Frontend function = `frontend/src/api/endpoints.js`.
 | GET | /payments/orders/{id} · /ledger | customer / owner | Payment · ledger entries | `orderApi.ledger` |
 
 Lifecycle: `pending_payment → placed → accepted → preparing → ready_for_pickup → out_for_delivery → delivered`;
-`cancelled` (customer, before preparing), `rejected` (owner, before preparing). Owner moves placed…ready; the assigned courier moves ready → out_for_delivery → delivered.
+`cancelled` (customer, before acceptance), `rejected` (owner, before preparing). Owner moves placed…ready; the assigned courier moves ready → out_for_delivery → delivered.
 
 ## Reviews, refunds, statistics
 | Method | Path | Who | Body / params | Frontend |
 |---|---|---|---|---|
 | POST | /reviews | customer | `{order_id, rating 1–5, comment?}` (delivered orders, one per order) | `reviewApi.create` |
-| POST | /orders/{id}/refund-requests | customer | `{reason}` (delivered + paid) | `refundApi.request` |
+| POST | /orders/{id}/refund-requests | customer | `{reason}` (delivered + mock_paid; one request per order) | `refundApi.request` |
 | GET | /refund-requests/me | customer | Page[RefundRequest] | `refundApi.mine` |
 | GET | /refund-requests/incoming | owner | `status, limit, offset` | `refundApi.incoming` |
 | POST | /refund-requests/{id}/decision | owner | `{decision: "approve" \| "reject"}` | `refundApi.decide` |
@@ -71,3 +71,14 @@ Lifecycle: `pending_payment → placed → accepted → preparing → ready_for_
 | GET | /statistics/me | any | role-specific (used for couriers) | `statsApi.me` |
 
 Added for the frontend in this phase: `GET /users/delivery-partners`, and the `created_from` / `created_to` filters on `GET /orders/me`.
+
+## Phase 3 additions
+| Method | Path | Who | Notes | Frontend |
+|---|---|---|---|---|
+| POST | /ai/insights | customer | optional `{question: 3–500 chars}` → `{answer, source: openai\|no_orders, model, orders_considered, generated_at}`. OpenAI SDK, server-side, ONLY the caller's newest 50 orders; no orders → factual reply without calling OpenAI. 429 (rate limit, `Retry-After`), 502 (provider error), 503 (no key / quota), 504 (timeout). | `aiApi.ask` |
+| GET | /ai/summary | customer | AI summary of previous orders; same response and errors; shares the per-customer rate limit | `aiApi.summary` |
+| GET | /owner/reminders | owner | `unread_only, limit, offset` → Page of idle-order reminders (placed/accepted > 15 min in the same status) for the owner's restaurants, newest first: `status_snapshot, status_updated_at_snapshot, created_at, read_at, is_read, current_order_status, still_waiting` | `reminderApi.list` |
+| GET | /owner/reminders/unread-count | owner | → `{unread}` | `reminderApi.unreadCount` |
+| PATCH | /owner/reminders/{id}/read | owner | idempotent; another owner's reminder → 404 | `reminderApi.markRead` |
+
+`GET /orders/{id}` now also returns `review` (or null) and `refund_requests`. Payment status after a successful dummy charge is `mock_paid`.

@@ -79,7 +79,7 @@ def test_successful_checkout_creates_paid_order_atomically(client, customer, res
     assert [e["status"] for e in order["events"]] == ["pending_payment", "placed"]
 
     payment = order["payment"]
-    assert payment["status"] == "paid" and payment["method"] == "upi"
+    assert payment["status"] == "mock_paid" and payment["method"] == "upi"
     assert Decimal(payment["amount"]) == TOTAL
     assert payment["transaction_ref"].startswith("SIM-")
 
@@ -209,7 +209,7 @@ def test_invalid_cart_shapes_rejected(client, customer, restaurant, mutate):
     lambda b: b["items"][0].update(unit_price="0.01"),
     lambda b: b["items"][0].update(price="0.01"),
     lambda b: b.update(status="placed"),
-    lambda b: b.update(payment_status="paid"),
+    lambda b: b.update(payment_status="mock_paid"),
     lambda b: b.update(transaction_ref="SIM-FAKE"),
 ])
 def test_client_supplied_prices_and_payment_state_are_rejected(client, customer, restaurant, tamper):
