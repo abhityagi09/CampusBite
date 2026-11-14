@@ -66,16 +66,11 @@ def test_full_happy_path_lifecycle(client, owner, customer, courier, restaurant)
 
     assert set_status(client, owner, oid, "accepted").json()["status"] == "accepted"
     assert set_status(client, owner, oid, "preparing").status_code == 200
-    assert client.get("/api/v1/orders/available", headers=courier).json() == []
-    assert set_status(client, owner, oid, "ready_for_pickup").status_code == 200
-
-    available = client.get("/api/v1/orders/available", headers=courier).json()
-    assert [o["id"] for o in available] == [oid]
-
-    claimed = client.post(f"/api/v1/orders/{oid}/claim", headers=courier)
-    assert claimed.status_code == 200
-    assert claimed.json()["delivery_partner_id"] is not None
-    assert client.get("/api/v1/orders/available", headers=courier).json() == []
+    assert set_status(client, owner, oid, "ready").status_code == 200
+    assert client.get(f"/api/v1/orders/{oid}", headers=courier).status_code == 404  # not assigned yet
+    cid = client.get("/api/v1/auth/me", headers=courier).json()["id"]
+    assert client.post(f"/api/v1/orders/{oid}/assign-delivery", json={"delivery_partner_id": cid},
+                       headers=owner).json()["status"] == "assigned"
 
     assert set_status(client, courier, oid, "out_for_delivery").status_code == 200
     done = set_status(client, courier, oid, "delivered")
@@ -87,7 +82,8 @@ def test_full_happy_path_lifecycle(client, owner, customer, courier, restaurant)
         "placed",
         "accepted",
         "preparing",
-        "ready_for_pickup",
+        "ready",
+        "assigned",
         "out_for_delivery",
         "delivered",
     ]
@@ -99,7 +95,7 @@ def test_invalid_transitions_and_wrong_actor(client, owner, customer, courier, r
     assert set_status(client, owner, oid, "accepted").status_code == 409
     pay(client, customer, oid)
     # cannot skip steps
-    assert set_status(client, owner, oid, "ready_for_pickup").status_code == 409
+    assert set_status(client, owner, oid, "ready").status_code == 409
     assert set_status(client, owner, oid, "delivered").status_code == 409
     # customers cannot drive the lifecycle; courier cannot touch an unassigned order
     assert set_status(client, customer, oid, "accepted").status_code == 403
@@ -155,16 +151,18 @@ def test_owner_reject_refunds(client, owner, customer, restaurant):
     assert set_status(client, owner, oid, "accepted").status_code == 409
 
 
-def test_only_one_courier_can_claim(client, make_user, owner, customer, courier, restaurant):
+def test_couriers_cannot_self_assign(client, make_user, owner, customer, courier, restaurant):
     other_courier = make_user("delivery_partner", "courier2@example.com")
     oid = place_order(client, customer, restaurant)["id"]
     pay(client, customer, oid)
-    for s in ("accepted", "preparing", "ready_for_pickup"):
+    for s in ("accepted", "preparing", "ready"):
         set_status(client, owner, oid, s)
 
-    assert client.post(f"/api/v1/orders/{oid}/claim", headers=courier).status_code == 200
-    second = client.post(f"/api/v1/orders/{oid}/claim", headers=other_courier)
-    assert second.status_code == 409
+    assert client.post(f"/api/v1/orders/{oid}/claim", headers=courier).status_code in (404, 405)  # removed
+    assert client.get("/api/v1/orders/available", headers=courier).status_code in (404, 422)  # removed
+    assert set_status(client, owner, oid, "assigned").status_code == 409  # only via assign-delivery
+    cid = client.get("/api/v1/auth/me", headers=courier).json()["id"]
+    client.post(f"/api/v1/orders/{oid}/assign-delivery", json={"delivery_partner_id": cid}, headers=owner)
     # the other courier can't move it, nor see it
     assert set_status(client, other_courier, oid, "out_for_delivery").status_code == 403
     assert client.get(f"/api/v1/orders/{oid}", headers=other_courier).status_code == 404

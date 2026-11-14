@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.core.exceptions import ConflictError
 from app.database.session import get_db
 from app.main import app
-from app.models import Order, OrderStatus, User
+from app.models import OrderStatus, User
 from app.services import order_service
 from app.services.order_lifecycle import TRANSITIONS, Actor
 from tests.conftest import pay, place_order, set_status
@@ -45,13 +45,13 @@ def session():
 
 def test_full_lifecycle_with_audit_and_timestamps(client, owner, customer, courier, restaurant):
     oid = placed(client, customer, restaurant)
-    advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
+    advance(client, owner, oid, "accepted", "preparing", "ready")
     assert assign(client, owner, oid, user_id(client, courier)).status_code == 200
     advance(client, courier, oid, "out_for_delivery", "delivered")
 
     order = client.get(f"{O}/{oid}", headers=customer).json()
     expected = ["pending_payment", "placed", "accepted", "preparing",
-                "ready_for_pickup", "out_for_delivery", "delivered"]
+                "ready", "assigned", "out_for_delivery", "delivered"]
     assert [e["status"] for e in order["events"]] == expected
     assert all(e["actor_id"] for e in order["events"])
     stamps = order["status_timestamps"]
@@ -62,7 +62,7 @@ def test_full_lifecycle_with_audit_and_timestamps(client, owner, customer, couri
 # ------------------------------------------------------------------ invalid moves
 
 
-@pytest.mark.parametrize("target", ["preparing", "ready_for_pickup", "out_for_delivery", "delivered"])
+@pytest.mark.parametrize("target", ["preparing", "ready", "out_for_delivery", "delivered"])
 def test_skipping_statuses_is_refused(client, owner, customer, restaurant, target):
     oid = placed(client, customer, restaurant)
     assert set_status(client, owner, oid, target).status_code in (403, 409)
@@ -91,8 +91,10 @@ def test_terminal_states_are_final(client, owner, customer, restaurant, terminal
 
 
 def test_transition_table_has_no_way_out_of_terminal_states():
-    for s in (OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.REJECTED):
+    for s in (OrderStatus.REFUNDED, OrderStatus.CANCELLED, OrderStatus.REJECTED):
         assert s not in TRANSITIONS
+    # delivered can only become refunded, and only by the system (approved refund request)
+    assert TRANSITIONS[OrderStatus.DELIVERED] == {OrderStatus.REFUNDED: frozenset({Actor.SYSTEM})}
     for targets in TRANSITIONS.values():  # nothing ever goes back to the start
         assert OrderStatus.PENDING_PAYMENT not in targets
 
@@ -108,10 +110,10 @@ def test_unauthorized_status_updates(client, make_user, owner, customer, courier
     assert set_status(client, courier, oid, "accepted").status_code == 403  # not assigned
     assert set_status(client, {}, oid, "accepted").status_code == 401
 
-    advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
+    advance(client, owner, oid, "accepted", "preparing", "ready")
     # owner cannot do the courier's steps, unassigned courier cannot either
-    assert set_status(client, owner, oid, "out_for_delivery").status_code == 403
-    assert set_status(client, courier, oid, "out_for_delivery").status_code == 403
+    assert set_status(client, owner, oid, "out_for_delivery").status_code == 409  # must be assigned first
+    assert set_status(client, courier, oid, "out_for_delivery").status_code == 403  # not this courier's
 
     other_courier = make_user("delivery_partner", "c2@example.com")
     assign(client, owner, oid, user_id(client, other_courier))
@@ -134,7 +136,7 @@ def test_customer_can_cancel_before_preparation(client, owner, customer, restaur
     assert resp.json()["payment"]["status"] == "refunded"
 
 
-@pytest.mark.parametrize("path", [["accepted"], ["accepted", "preparing"], ["accepted", "preparing", "ready_for_pickup"]])
+@pytest.mark.parametrize("path", [["accepted"], ["accepted", "preparing"], ["accepted", "preparing", "ready"]])
 def test_customer_cannot_cancel_once_preparation_started(client, owner, customer, restaurant, path):
     oid = placed(client, customer, restaurant)
     advance(client, owner, oid, *path)
@@ -168,7 +170,7 @@ def test_assign_delivery_rules(client, make_user, owner, customer, courier, rest
     assert assign(client, owner, oid, cid).status_code == 409  # accepted, not ready
     advance(client, owner, oid, "preparing")
     assert assign(client, owner, oid, cid).status_code == 409  # still cooking
-    advance(client, owner, oid, "ready_for_pickup")
+    advance(client, owner, oid, "ready")
 
     assert assign(client, make_user("owner", "o2@example.com"), oid, cid).status_code == 404
     assert assign(client, customer, oid, cid).status_code == 403
@@ -199,7 +201,7 @@ def test_deliveries_me(client, make_user, owner, customer, courier, restaurant):
     not_mine = placed(client, customer, restaurant)
     cid = user_id(client, courier)
     for oid in mine:
-        advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
+        advance(client, owner, oid, "accepted", "preparing", "ready")
         assign(client, owner, oid, cid)
     advance(client, owner, not_mine, "accepted")
 
@@ -258,7 +260,7 @@ def test_stale_assignment_is_refused(client, make_user, owner, customer, courier
     from app.services import order_lifecycle
 
     oid = placed(client, customer, restaurant)
-    advance(client, owner, oid, "accepted", "preparing", "ready_for_pickup")
+    advance(client, owner, oid, "accepted", "preparing", "ready")
     db_a = session()
     stale = _load(db_a, oid)  # sees no courier yet
     other = make_user("delivery_partner", "c2@example.com")

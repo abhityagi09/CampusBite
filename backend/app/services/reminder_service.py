@@ -86,7 +86,7 @@ def due_reminders(db: Session, now: datetime, limit: int = 500) -> list[DueRemin
             Order.status == OrderStatus.PENDING_PAYMENT,
             Order.status_updated_at <= now - PAYMENT_PENDING_AFTER,
         ]),
-        (ReminderType.ORDER_READY, customer, [Order.status == OrderStatus.READY_FOR_PICKUP]),
+        (ReminderType.ORDER_READY, customer, [Order.status == OrderStatus.READY]),
         (ReminderType.REVIEW_REQUEST, customer, [
             Order.status == OrderStatus.DELIVERED,
             Order.status_updated_at <= now - REVIEW_REQUEST_AFTER,

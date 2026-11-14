@@ -162,7 +162,7 @@ def deliver(client, owner, customer, courier, restaurant, items=(("Burger", 2), 
     oid = place_order(client, customer, restaurant, items)["id"]
     assert pay(client, customer, oid).status_code == 200
     courier_id = client.get("/api/v1/auth/me", headers=courier).json()["id"]
-    for s in ("accepted", "preparing", "ready_for_pickup"):
+    for s in ("accepted", "preparing", "ready"):
         assert set_status(client, owner, oid, s).status_code == 200
     r = client.post(f"/api/v1/orders/{oid}/assign-delivery",
                     json={"delivery_partner_id": courier_id}, headers=owner)

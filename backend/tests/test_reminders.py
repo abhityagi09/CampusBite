@@ -31,7 +31,7 @@ def test_each_reminder_type_is_sent_once_and_logged(client, db, owner, customer,
     unpaid = uuid.UUID(place_order(client, customer, restaurant)["id"])
     ready = place_order(client, customer, restaurant)["id"]
     pay(client, customer, ready)
-    for s in ("accepted", "preparing", "ready_for_pickup"):
+    for s in ("accepted", "preparing", "ready"):
         set_status(client, owner, ready, s)
     ready = uuid.UUID(ready)
     done = uuid.UUID(deliver(client, owner, customer, courier, restaurant))

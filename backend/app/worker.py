@@ -11,7 +11,9 @@
 """
 
 import logging
+import os
 import signal
+from pathlib import Path
 import threading
 from datetime import datetime, timezone
 
@@ -48,11 +50,19 @@ def run_once(session_factory=SessionLocal, bind=engine, notifier=None, now=None)
                 lock_conn.scalar(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_KEY})
 
 
+HEARTBEAT = Path(os.environ.get("WORKER_HEARTBEAT_FILE", "/tmp/campusbite-worker-heartbeat"))
+
+
 def _job() -> None:
     try:
         run_once()
     except Exception:  # keep the scheduler alive; the next tick retries
         log.exception("reminder run failed")
+    finally:
+        try:  # liveness for the container health check (scheduler loop is ticking)
+            HEARTBEAT.write_text(datetime.now(timezone.utc).isoformat())
+        except OSError:
+            pass
 
 
 def build_scheduler(interval_seconds: int) -> BlockingScheduler:

@@ -47,7 +47,7 @@ MAX_ORDERS = 50  # context bound: newest orders only
 MAX_ITEMS_PER_ORDER = 20
 MAX_TEXT = 80  # dish / restaurant names are truncated
 PENDING = {OrderStatus.PENDING_PAYMENT, OrderStatus.PLACED, OrderStatus.ACCEPTED,
-           OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.OUT_FOR_DELIVERY}
+           OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.ASSIGNED, OrderStatus.OUT_FOR_DELIVERY}
 
 DEFAULT_QUESTION = "Give me a short overview of my ordering habits and anything that needs my attention."
 SUMMARY_QUESTION = ("Summarize my previous orders: how many, what I usually order and from where, "

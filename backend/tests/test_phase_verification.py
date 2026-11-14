@@ -112,7 +112,7 @@ def test_young_orders_and_more_ineligible_states(client, db, owner, customer, co
     cid = client.get("/api/v1/auth/me", headers=courier).json()["id"]
     assigned = place_order(client, customer, restaurant)["id"]
     pay(client, customer, assigned)
-    for s in ("accepted", "preparing", "ready_for_pickup"):
+    for s in ("accepted", "preparing", "ready"):
         set_status(client, owner, assigned, s)
     client.post(f"/api/v1/orders/{assigned}/assign-delivery", json={"delivery_partner_id": cid}, headers=owner)
     out = deliver(client, owner, customer, courier, restaurant)
@@ -174,3 +174,20 @@ def test_threshold_is_configurable(client, db, customer, restaurant, monkeypatch
     assert _stale(db) == []
     rs.process_reminders(db, MockNotifier(), now=since + timedelta(minutes=31))
     assert len(_stale(db)) == 1
+
+
+def test_worker_heartbeat_written_even_when_a_run_fails(monkeypatch, tmp_path):
+    """The scheduler container's health check reads this file; it must keep ticking on failures."""
+    beat = tmp_path / "heartbeat"
+    monkeypatch.setattr(worker, "HEARTBEAT", beat)
+
+    def boom():
+        raise OperationalError("SELECT 1", {}, Exception("db down"))
+
+    monkeypatch.setattr(worker, "run_once", boom)
+    worker._job()
+    first = beat.read_text()
+    assert datetime.fromisoformat(first).tzinfo is not None
+    monkeypatch.setattr(worker, "run_once", lambda: None)
+    worker._job()
+    assert beat.read_text() >= first

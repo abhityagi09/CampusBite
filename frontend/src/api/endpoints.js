@@ -37,11 +37,8 @@ export const orderApi = {
   setStatus: (id, status) => d(api.patch(`/orders/${id}/status`, { status })),
   assign: (id, deliveryPartnerId) =>
     d(api.post(`/orders/${id}/assign-delivery`, { delivery_partner_id: deliveryPartnerId })),
-  available: (params) => d(api.get("/orders/available", { params: clean(params) })),
-  claim: (id) => d(api.post(`/orders/${id}/claim`)),
   myDeliveries: (params) => d(api.get("/deliveries/me", { params: clean(params) })),
   pay: (id, method) => d(api.post(`/payments/orders/${id}/pay`, { method })),
-  ledger: (id) => d(api.get(`/payments/orders/${id}/ledger`)),
 };
 
 export const refundApi = {
@@ -56,7 +53,6 @@ export const reviewApi = {
 };
 
 export const statsApi = {
-  customer: () => d(api.get("/statistics/customer")),
   owner: () => d(api.get("/statistics/owner")),
   me: () => d(api.get("/statistics/me")),
 };

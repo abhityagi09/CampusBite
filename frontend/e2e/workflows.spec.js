@@ -137,6 +137,14 @@ test("AI insights shows the real backend answer or its real error", async ({ pag
   await expect(page.locator(".bubble.ai:not(.muted), .bubble.err").last()).toContainText(/AI-generated|not configured|AI/);
   await page.getByRole("button", { name: "Summarize my order history" }).click();
   await expect(page.locator(".bubble")).toHaveCount(4, { timeout: 45_000 }); // 2 questions + 2 real responses
+  if (process.env.E2E_MOCK_OPENAI) {
+    // Backend -> OpenAI SDK -> mock server: the answer quotes this customer's real figures.
+    const answer = page.locator(".bubble.ai").last();
+    await expect(answer).toContainText("MOCK-AI: 2 orders analysed.");  // cancelled + delivered/refunded order
+    await expect(answer).toContainText("Most ordered dish: Classic Burger");
+    await expect(answer.locator("strong")).toHaveText("Classic Burger");  // formatted, not raw markdown
+    await expect(answer).toContainText(/AI-generated from your 2 most recent order/);
+  }
 
   // A brand-new customer has no orders: factual reply, no OpenAI call involved.
   await page.evaluate(() => localStorage.clear());

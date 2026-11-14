@@ -14,11 +14,13 @@ class OrderStatus(StrEnum):
     PLACED = "placed"
     ACCEPTED = "accepted"
     PREPARING = "preparing"
-    READY_FOR_PICKUP = "ready_for_pickup"
+    READY = "ready"
+    ASSIGNED = "assigned"  # courier assigned by the owner
     OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
     REJECTED = "rejected"
+    REFUNDED = "refunded"  # delivered, then refunded (approved refund request)
 
 
 class PaymentMethod(StrEnum):

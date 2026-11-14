@@ -16,7 +16,7 @@ def create_review(db: Session, customer: User, data: ReviewCreate) -> Review:
     order = db.get(Order, data.order_id)
     if order is None or order.customer_id != customer.id:
         raise NotFoundError("Order not found")
-    if order.status != OrderStatus.DELIVERED:
+    if order.status not in (OrderStatus.DELIVERED, OrderStatus.REFUNDED):
         raise BadRequestError("Only delivered orders can be reviewed")
     if db.scalar(select(Review.id).where(Review.order_id == order.id)):
         raise ConflictError("This order has already been reviewed")

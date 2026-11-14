@@ -39,8 +39,8 @@ export function OwnerDashboardPage() {
           <div className="stats">
             <Stat icon={Store} label="Restaurants" value={s.restaurant_count} />
             <Stat icon={ClipboardList} label="Total orders" value={s.total_orders} />
-            <Stat icon={Hourglass} label="Pending" value={count("placed", "accepted", "preparing", "ready_for_pickup", "out_for_delivery")} />
-            <Stat icon={CheckCircle2} label="Completed" value={count("delivered")} />
+            <Stat icon={Hourglass} label="Pending" value={count("placed", "accepted", "preparing", "ready", "assigned", "out_for_delivery")} />
+            <Stat icon={CheckCircle2} label="Completed" value={count("delivered", "refunded")} />
             <Stat icon={IndianRupee} label="Net revenue" value={money(s.net_revenue)} />
             <Stat icon={Star} label="Rating" value={s.average_rating != null ? `${s.average_rating} (${s.review_count})` : "—"} />
           </div>
@@ -123,9 +123,9 @@ export function OwnerDashboardPage() {
 const OWNER_NEXT = {
   placed: [["accepted", "Accept"], ["rejected", "Reject"]],
   accepted: [["preparing", "Start preparing"], ["rejected", "Reject"]],
-  preparing: [["ready_for_pickup", "Mark ready"]],
+  preparing: [["ready", "Mark ready"]],
 };
-const ASSIGNABLE = ["ready_for_pickup"]; // backend: couriers are assigned only to READY orders
+const ASSIGNABLE = ["ready", "assigned"]; // READY -> ASSIGNED; re-assign allowed until pickup
 const LIMIT = 15;
 
 export function OwnerOrdersPage() {
@@ -181,7 +181,7 @@ export function OwnerOrdersPage() {
       )}
 
       <div className="tabs" role="tablist">
-        {["placed", "accepted", "preparing", "ready_for_pickup", "out_for_delivery", "delivered", "cancelled", "rejected", ""].map((s) => (
+        {["placed", "accepted", "preparing", "ready", "assigned", "out_for_delivery", "delivered", "refunded", "cancelled", "rejected", ""].map((s) => (
           <button key={s} role="tab" aria-selected={status === s} className={status === s ? "active" : ""}
             onClick={() => { setStatus(s); setOffset(0); }}>{s ? ORDER_STATUS[s].label : "All"}</button>
         ))}

@@ -6,9 +6,10 @@ from tests.conftest import pay, place_order, set_status
 def _deliver(client, owner, customer, courier, restaurant):
     oid = place_order(client, customer, restaurant)["id"]
     pay(client, customer, oid)
-    for s in ("accepted", "preparing", "ready_for_pickup"):
+    for s in ("accepted", "preparing", "ready"):
         set_status(client, owner, oid, s)
-    client.post(f"/api/v1/orders/{oid}/claim", headers=courier)
+    cid = client.get("/api/v1/auth/me", headers=courier).json()["id"]
+    client.post(f"/api/v1/orders/{oid}/assign-delivery", json={"delivery_partner_id": cid}, headers=owner)
     for s in ("out_for_delivery", "delivered"):
         set_status(client, courier, oid, s)
     return oid

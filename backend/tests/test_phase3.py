@@ -1,14 +1,8 @@
 """Stale-order reminders for owners, owner order date filter, order detail extras."""
 
-import uuid
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
-from app.database.session import get_db
-from app.main import app
-from app.services import reminder_service
-from app.services.notifications import MockNotifier
 from tests.conftest import deliver, pay, place_order, set_status
 
 

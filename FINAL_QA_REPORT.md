@@ -71,14 +71,21 @@ AI insights endpoint + chat UI, loading/error/empty states, confirmation dialogs
 | Secret scan | no keys in tracked files, frontend source, bundle or Vite env; `backend/.env` ignored |
 | **OpenAI live call** | **not executed** – no `OPENAI_API_KEY` available; AI success/failure paths verified with a mocked SDK only |
 
+## Capstone completion pass (2026-11-15)
+- Lifecycle now uses real `ready`, `assigned`, `refunded` order statuses (migration 0006 converted existing rows);
+  courier self-claim endpoints removed (owners assign); refund approval moves the order to `refunded` atomically.
+- Request logging + `X-Process-Time-Ms` middleware; CORS exposes `Retry-After`, `Idempotent-Replayed`.
+- Backend: SQLite **281 passed, 5 skipped**; PostgreSQL **286 passed, 0 skipped**. `npm run build` ✓.
+  Playwright vs Docker build **12 passed**. Live API smoke **30/30**. `docker compose config` valid; DB at 0006.
+
 ## Not verified / known limitations
 - **AI answers from OpenAI were not observed live**: no `OPENAI_API_KEY` is configured here, so the endpoint
   correctly returns 503. The OpenAI request/response path is covered by tests with a faked HTTP response.
   To enable: set `OPENAI_API_KEY` in `backend/.env`, then `docker compose restart backend`.
 - AI rate limit is in-process memory (not shared across several API instances).
-- A stale-order reminder is sent once per order (event key = order + type).
-- Status names in the API are `ready_for_pickup` / `out_for_delivery` (UI shows "Ready" / "Out for delivery").
-- `POST /orders/{id}/claim` (courier self-assign) still exists in the API but is not used by the UI.
+- Stale-order reminders: one per order status period (event key includes status + status_updated_at).
+- API status values are lowercase (`ready`, `assigned`, `out_for_delivery`, `refunded`, ...).
+- Courier self-claim (`POST /orders/{id}/claim`, `GET /orders/available`) was removed in the capstone pass: owners assign couriers.
 - Customers may also cancel unpaid `pending_payment` orders (nothing charged); paid orders only while `placed`.
 - Currency symbol is a frontend setting (`VITE_CURRENCY_SYMBOL`); the API stores no currency.
 - No ESLint config or frontend unit tests exist; coverage is via Playwright E2E.

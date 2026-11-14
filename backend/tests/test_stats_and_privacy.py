@@ -55,7 +55,7 @@ def test_owner_statistics_with_restaurant_performance(client, make_user, owner, 
 
     s = client.get("/api/v1/statistics/owner", headers=owner).json()
     assert s["total_orders"] == 3
-    assert s["orders_by_status"] == {"delivered": 2, "cancelled": 1}
+    assert s["orders_by_status"] == {"delivered": 1, "refunded": 1, "cancelled": 1}
     assert Decimal(s["revenue"]) == Decimal("17.75")
     assert Decimal(s["refunded"]) == Decimal("13.25")
     assert Decimal(s["net_revenue"]) == Decimal("4.50")
@@ -81,7 +81,7 @@ def test_customer_statistics_are_own_only(client, make_user, owner, customer, co
 
     s = client.get("/api/v1/statistics/customer", headers=customer).json()
     assert s["total_orders"] == 2
-    assert s["orders_by_status"] == {"delivered": 1, "pending_payment": 1}
+    assert s["orders_by_status"] == {"refunded": 1, "pending_payment": 1}
     assert Decimal(s["total_spent"]) == Decimal("13.25")
     assert Decimal(s["total_refunded"]) == Decimal("13.25") and Decimal(s["net_spent"]) == 0
     assert s["top_restaurants"][0]["order_count"] == 2

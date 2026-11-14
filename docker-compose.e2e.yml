@@ -1,0 +1,18 @@
+# E2E ONLY: points the backend at a deterministic mock OpenAI server.
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend mock-openai
+# Restore the normal backend afterwards with:  docker compose up -d backend
+services:
+  mock-openai:
+    image: python:3.12-alpine
+    container_name: campusbite-mock-openai
+    command: ["python", "/mock/mock_openai.py"]
+    volumes:
+      - ./frontend/e2e/mock_openai.py:/mock/mock_openai.py:ro
+  backend:
+    environment:
+      OPENAI_API_KEY: sk-e2e-mock-not-a-real-key
+      OPENAI_BASE_URL: http://mock-openai:8080/v1
+      OPENAI_MAX_RETRIES: "0"
+    depends_on:
+      mock-openai:
+        condition: service_started

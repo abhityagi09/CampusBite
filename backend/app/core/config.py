@@ -123,6 +123,15 @@ class Settings(BaseSettings):
                 raise ValueError("SECRET_KEY must be at least 32 characters in production")
         return self
 
+    @field_validator("CORS_ORIGINS")
+    @classmethod
+    def _no_wildcard_with_credentials(cls, value: str) -> str:
+        # Credentials (Authorization header) are allowed, so "*" would let ANY site call the
+        # API with a user's token. Require explicit origins.
+        if any(o.strip() == "*" for o in value.split(",")):
+            raise ValueError("CORS_ORIGINS must list explicit origins, not '*'")
+        return value
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

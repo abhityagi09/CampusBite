@@ -65,17 +65,16 @@ export function OrdersPage() {
 function Timeline({ order }) {
   if (["cancelled", "rejected"].includes(order.status) || order.status === "pending_payment") return null;
   const stamps = order.status_timestamps || {};
-  const reached = TIMELINE.indexOf(order.status);
-  const assigned = Boolean(order.delivery_partner_id);
-  const label = { assigned: "Courier assigned", ...Object.fromEntries(Object.entries(ORDER_STATUS).map(([k, v]) => [k, v.label])) };
+  // a refunded order went through the whole delivery first
+  const reached = TIMELINE.indexOf(order.status === "refunded" ? "delivered" : order.status);
   return (
     <ol className="timeline">
       {TIMELINE.map((s, i) => {
-        const done = s === "assigned" ? assigned : i <= reached;
+        const done = i <= reached;
         return (
           <li key={s} className={done ? "done" : ""}>
             {done ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-            <span>{label[s]}</span>
+            <span>{ORDER_STATUS[s].label}</span>
             {stamps[s] && <small className="muted">{dateTime(stamps[s])}</small>}
           </li>
         );
@@ -112,7 +111,7 @@ export function OrderDetailPage() {
   // Both come from the order itself (server state), so duplicates are impossible to offer.
   const myRefunds = o.refund_requests || [];
   const canCancel = ["pending_payment", "placed"].includes(o.status);
-  const canReview = o.status === "delivered" && !o.review;
+  const canReview = ["delivered", "refunded"].includes(o.status) && !o.review;
   const canRefund = o.status === "delivered" && o.payment?.status === "mock_paid" && myRefunds.length === 0;
 
   const run = async (fn, ok) => {

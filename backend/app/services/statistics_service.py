@@ -26,6 +26,10 @@ from app.schemas.statistics import (
 )
 
 
+# Refunded orders were delivered too: revenue is gross, refunds are reported separately.
+DELIVERED_LIKE = (OrderStatus.DELIVERED, OrderStatus.REFUNDED)
+
+
 def _dec(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
@@ -37,7 +41,7 @@ def _by_status(db: Session, *conditions) -> dict[str, int]:
     return {status.value: count for status, count in rows}
 
 
-_DELIVERED_AMOUNT = case((Order.status == OrderStatus.DELIVERED, Order.total_amount), else_=0)
+_DELIVERED_AMOUNT = case((Order.status.in_(DELIVERED_LIKE), Order.total_amount), else_=0)
 
 
 def _refunds_on_delivered(db: Session, *conditions):
@@ -46,7 +50,7 @@ def _refunds_on_delivered(db: Session, *conditions):
         .join(Order, Order.id == PaymentLedger.order_id)
         .where(
             *conditions,
-            Order.status == OrderStatus.DELIVERED,
+            Order.status.in_(DELIVERED_LIKE),
             PaymentLedger.transaction_type == TransactionType.REFUND,
             PaymentLedger.status == LedgerStatus.COMPLETED,
         )
@@ -57,7 +61,7 @@ def customer_stats(db: Session, user: User) -> CustomerStats:
     by_status = _by_status(db, Order.customer_id == user.id)
     spent = db.scalar(
         select(func.sum(Order.total_amount)).where(
-            Order.customer_id == user.id, Order.status == OrderStatus.DELIVERED
+            Order.customer_id == user.id, Order.status.in_(DELIVERED_LIKE)
         )
     )
     refunded = _refunds_on_delivered(db, Order.customer_id == user.id)
@@ -92,7 +96,7 @@ def owner_stats(db: Session, user: User) -> OwnerStats:
 
     by_status = _by_status(db, in_mine)
     revenue = db.scalar(
-        select(func.sum(Order.total_amount)).where(in_mine, Order.status == OrderStatus.DELIVERED)
+        select(func.sum(Order.total_amount)).where(in_mine, Order.status.in_(DELIVERED_LIKE))
     )
     avg_rating, review_count = db.execute(
         select(func.avg(Review.rating), func.count(Review.id)).where(
@@ -104,7 +108,7 @@ def owner_stats(db: Session, user: User) -> OwnerStats:
     top_rows = db.execute(
         select(OrderItem.name, quantity)
         .join(Order, Order.id == OrderItem.order_id)
-        .where(in_mine, Order.status == OrderStatus.DELIVERED)
+        .where(in_mine, Order.status.in_(DELIVERED_LIKE))
         .group_by(OrderItem.name)
         .order_by(desc(quantity), OrderItem.name)
         .limit(5)
@@ -134,7 +138,7 @@ def restaurant_performance(db: Session, user: User) -> list[RestaurantPerformanc
             Restaurant.name,
             Restaurant.is_active,
             func.count(Order.id),
-            func.count(case((Order.status == OrderStatus.DELIVERED, 1))),
+            func.count(case((Order.status.in_(DELIVERED_LIKE), 1))),
             func.count(
                 case((Order.status.in_([OrderStatus.CANCELLED, OrderStatus.REJECTED]), 1))
             ),
@@ -165,17 +169,17 @@ def restaurant_performance(db: Session, user: User) -> list[RestaurantPerformanc
 def delivery_stats(db: Session, user: User) -> DeliveryStats:
     mine = Order.delivery_partner_id == user.id
     completed = db.scalar(
-        select(func.count(Order.id)).where(mine, Order.status == OrderStatus.DELIVERED)
+        select(func.count(Order.id)).where(mine, Order.status.in_(DELIVERED_LIKE))
     )
     active = db.scalar(
         select(func.count(Order.id)).where(
             mine,
-            Order.status.in_([OrderStatus.READY_FOR_PICKUP, OrderStatus.OUT_FOR_DELIVERY]),
+            Order.status.in_([OrderStatus.ASSIGNED, OrderStatus.OUT_FOR_DELIVERY]),
         )
     )
     available = db.scalar(
         select(func.count(Order.id)).where(
-            Order.status == OrderStatus.READY_FOR_PICKUP,
+            Order.status == OrderStatus.READY,
             Order.delivery_partner_id.is_(None),
         )
     )

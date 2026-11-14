@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -18,6 +19,7 @@ from app.database.session import check_connection, engine, wait_for_database
 from app.routers import api_router
 
 logger = logging.getLogger("campusbite")
+access_log = logging.getLogger("campusbite.access")
 
 
 @asynccontextmanager
@@ -40,7 +42,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine.dispose()
 
 
+def configure_logging() -> None:
+    """Uvicorn only configures its own loggers; give ours (access log, AI, worker) a handler
+    so INFO lines such as "GET /api/v1/orders -> 200 (12.3 ms)" actually reach the console."""
+    app_log = logging.getLogger("campusbite")
+    if not app_log.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        app_log.addHandler(handler)
+    app_log.setLevel(logging.INFO)
+
+
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI(
         title=settings.APP_NAME,
         version="0.3.0",
@@ -54,7 +68,26 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # readable by the browser app (rate-limit waits, idempotent replays, timing)
+        expose_headers=["Retry-After", "Idempotent-Replayed", "X-Process-Time-Ms"],
     )
+
+    @app.middleware("http")
+    async def log_and_time_requests(request: Request, call_next):
+        """Access log (method, path, status, duration) + X-Process-Time-Ms header.
+        Only the path is logged: query strings and bodies may hold personal data."""
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            access_log.error("%s %s -> 500 (%.1f ms)", request.method, request.url.path,
+                             (time.perf_counter() - start) * 1000)
+            raise
+        elapsed = (time.perf_counter() - start) * 1000
+        response.headers["X-Process-Time-Ms"] = f"{elapsed:.1f}"
+        access_log.info("%s %s -> %s (%.1f ms)", request.method, request.url.path,
+                        response.status_code, elapsed)
+        return response
 
     register_exception_handlers(app)
 

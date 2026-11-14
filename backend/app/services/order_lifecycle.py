@@ -1,13 +1,13 @@
 """The ONLY place that decides which order status changes are allowed, and by whom.
 
     pending_payment --system(pay)--> placed --owner--> accepted --owner--> preparing
-    preparing --owner--> ready_for_pickup ("ready")
-    ready_for_pickup --assigned courier--> out_for_delivery ("picked_up")
-    out_for_delivery --assigned courier--> delivered
+    preparing --owner--> ready --owner assigns a courier--> assigned
+    assigned --assigned courier--> out_for_delivery --assigned courier--> delivered
+    delivered --approved refund request--> refunded
 
     customer may cancel  : pending_payment, placed               (nothing accepted yet)
-    owner may reject     : placed, accepted                    (before preparation)
-    delivered / cancelled / rejected are terminal.
+    owner may reject     : placed, accepted                      (before preparation)
+    cancelled / rejected / refunded are terminal; delivered can only become refunded.
 
 Anything not listed (skips, reversals, repeats, leaving a terminal state) is refused.
 """
@@ -46,13 +46,17 @@ TRANSITIONS: dict[OrderStatus, dict[OrderStatus, frozenset[Actor]]] = {
         S.PREPARING: frozenset({Actor.OWNER}),
         S.REJECTED: frozenset({Actor.OWNER}),
     },
-    S.PREPARING: {S.READY_FOR_PICKUP: frozenset({Actor.OWNER})},
-    S.READY_FOR_PICKUP: {S.OUT_FOR_DELIVERY: frozenset({Actor.COURIER})},
+    S.PREPARING: {S.READY: frozenset({Actor.OWNER})},
+    S.READY: {S.ASSIGNED: frozenset({Actor.OWNER})},  # only via POST /orders/{id}/assign-delivery
+    S.ASSIGNED: {S.OUT_FOR_DELIVERY: frozenset({Actor.COURIER})},
     S.OUT_FOR_DELIVERY: {S.DELIVERED: frozenset({Actor.COURIER})},
+    S.DELIVERED: {S.REFUNDED: frozenset({Actor.SYSTEM})},  # only via an approved refund request
 }
-TERMINAL = frozenset({S.DELIVERED, S.CANCELLED, S.REJECTED})
-# Owners (re)assign a courier only once the food is ready, until it is picked up.
-ASSIGNABLE = frozenset({S.READY_FOR_PICKUP})
+TERMINAL = frozenset({S.REFUNDED, S.CANCELLED, S.REJECTED})
+# Assignment needs a READY order; an ASSIGNED one may be re-assigned until pickup.
+ASSIGNABLE = frozenset({S.READY, S.ASSIGNED})
+# Reached only through dedicated endpoints, never through PATCH /orders/{id}/status.
+NOT_VIA_STATUS_ENDPOINT = frozenset({S.ASSIGNED, S.REFUNDED})
 
 
 def check_transition(current: OrderStatus, new: OrderStatus, actor: Actor) -> None:

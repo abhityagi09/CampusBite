@@ -16,11 +16,13 @@ export const ORDER_STATUS = {
   placed: { label: "Placed", tone: "info" },
   accepted: { label: "Accepted", tone: "info" },
   preparing: { label: "Preparing", tone: "info" },
-  ready_for_pickup: { label: "Ready", tone: "info" },
+  ready: { label: "Ready", tone: "info" },
+  assigned: { label: "Courier assigned", tone: "info" },
   out_for_delivery: { label: "Out for delivery", tone: "info" },
   delivered: { label: "Delivered", tone: "ok" },
   cancelled: { label: "Cancelled", tone: "muted" },
   rejected: { label: "Rejected", tone: "bad" },
+  refunded: { label: "Refunded", tone: "muted" },
 };
 
 export const PAYMENT_STATUS = {
@@ -37,9 +39,9 @@ export const REFUND_STATUS = {
   processed: { label: "Refund approved · refunded", tone: "ok" },
 };
 
-/** Customer-facing timeline; ASSIGNED is derived from delivery_partner_id. */
-export const TIMELINE = ["placed", "accepted", "preparing", "ready_for_pickup", "assigned", "out_for_delivery", "delivered"];
-export const ACTIVE_STATUSES = ["pending_payment", "placed", "accepted", "preparing", "ready_for_pickup", "out_for_delivery"];
+/** Customer-facing timeline (all real backend statuses). */
+export const TIMELINE = ["placed", "accepted", "preparing", "ready", "assigned", "out_for_delivery", "delivered"];
+export const ACTIVE_STATUSES = ["pending_payment", "placed", "accepted", "preparing", "ready", "assigned", "out_for_delivery"];
 export const PAYMENT_METHODS = [
   { value: "upi", label: "UPI" },
   { value: "card", label: "Card" },

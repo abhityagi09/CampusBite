@@ -47,16 +47,14 @@ Frontend function = `frontend/src/api/endpoints.js`.
 | GET | /orders/{id}/payment · /tracking | same | Payment · status events | – |
 | POST | /orders/{id}/cancel | customer | allowed in pending_payment, placed | `orderApi.cancel` |
 | PATCH | /orders/{id}/status | owner / assigned courier | `{status}` (see lifecycle) | `orderApi.setStatus` |
-| POST | /orders/{id}/assign-delivery | owner | `{delivery_partner_id}` (only when `ready_for_pickup`) | `orderApi.assign` |
+| POST | /orders/{id}/assign-delivery | owner | `{delivery_partner_id}`: `ready` → `assigned` (re-assign allowed while `assigned`) | `orderApi.assign` |
 | GET | /users/delivery-partners | owner | → `[{id, name}]` active couriers | `userApi.deliveryPartners` |
-| GET | /orders/available | courier | ready & unassigned → list | `orderApi.available` |
-| POST | /orders/{id}/claim | courier | self-assign a ready order | `orderApi.claim` |
 | GET | /deliveries/me | courier | `status, limit, offset` → Page[Order] | `orderApi.myDeliveries` |
 | POST | /payments/orders/{id}/pay | customer | `{method}` → Payment (pay a pending order) | `orderApi.pay` |
-| GET | /payments/orders/{id} · /ledger | customer / owner | Payment · ledger entries | `orderApi.ledger` |
+| GET | /payments/orders/{id} · /ledger | customer / owner | Payment · ledger entries | – (not used by the UI) |
 
-Lifecycle: `pending_payment → placed → accepted → preparing → ready_for_pickup → out_for_delivery → delivered`;
-`cancelled` (customer, before acceptance), `rejected` (owner, before preparing). Owner moves placed…ready; the assigned courier moves ready → out_for_delivery → delivered.
+Lifecycle: `pending_payment → placed → accepted → preparing → ready → assigned → out_for_delivery → delivered → (refunded)`;
+`cancelled` (customer, before acceptance), `rejected` (owner, before preparing). Owner moves placed…ready and assigns (→ assigned); the assigned courier moves assigned → out_for_delivery → delivered; an approved refund moves delivered → refunded.
 
 ## Reviews, refunds, statistics
 | Method | Path | Who | Body / params | Frontend |
@@ -66,7 +64,7 @@ Lifecycle: `pending_payment → placed → accepted → preparing → ready_for_
 | GET | /refund-requests/me | customer | Page[RefundRequest] | `refundApi.mine` |
 | GET | /refund-requests/incoming | owner | `status, limit, offset` | `refundApi.incoming` |
 | POST | /refund-requests/{id}/decision | owner | `{decision: "approve" \| "reject"}` | `refundApi.decide` |
-| GET | /statistics/customer | customer | own totals, refunds, top restaurants | `statsApi.customer` |
+| GET | /statistics/customer | customer | own totals, refunds, top restaurants | – (not used by the UI) |
 | GET | /statistics/owner | owner | totals, per-restaurant performance, top items | `statsApi.owner` |
 | GET | /statistics/me | any | role-specific (used for couriers) | `statsApi.me` |
 

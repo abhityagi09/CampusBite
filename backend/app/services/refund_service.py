@@ -28,6 +28,7 @@ from app.models import (
     LedgerStatus,
     Order,
     OrderStatus,
+    OrderStatusEvent,
     Payment,
     PaymentLedger,
     PaymentStatus,
@@ -45,7 +46,6 @@ from app.services.order_service import load_order
 from app.services.restaurant_service import Pagination
 
 REFUNDABLE_ORDER_STATUSES = frozenset({OrderStatus.DELIVERED})
-OPEN = (RefundStatus.REQUESTED, RefundStatus.APPROVED)
 
 
 def _page(db: Session, stmt, page: Pagination) -> Page[RefundRequestRead]:
@@ -155,6 +155,17 @@ def decide_refund(
                 raise ConflictError("This order's payment is not refundable (already refunded?)")
             _cas(db, RefundRequest, req.id, RefundStatus.REQUESTED, RefundStatus.PROCESSED)
             _cas(db, Payment, payment.id, PaymentStatus.PAID, PaymentStatus.REFUNDED)
+            # order: delivered -> refunded, same transaction (+ audit event)
+            now = utcnow()
+            moved = db.execute(
+                update(Order)
+                .where(Order.id == order.id, Order.status == OrderStatus.DELIVERED)
+                .values(status=OrderStatus.REFUNDED, status_updated_at=now, updated_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            if moved.rowcount != 1:
+                raise ConflictError("The order changed meanwhile. Reload and try again.")
+            db.add(OrderStatusEvent(order_id=order.id, status=OrderStatus.REFUNDED, actor_id=owner.id))
             db.add(
                 PaymentLedger(
                     order_id=order.id,

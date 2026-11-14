@@ -43,7 +43,8 @@ services:
       # Ignore any stale DATABASE_URL left in .env so the POSTGRES_* values above win.
       DATABASE_URL: ""
     # Development: auto-reload on code changes (pairs with the bind mount below).
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # --no-access-log: our middleware logs method, path, status and duration (without query strings)
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--no-access-log"]
     depends_on:
       db:
         condition: service_healthy
@@ -71,6 +72,12 @@ services:
       POSTGRES_PORT: "5432"
       DATABASE_URL: ""
     command: ["python", "-m", "app.worker"]
+    healthcheck:   # heartbeat written after every run; stale for 3 intervals = unhealthy
+      test: ["CMD", "python", "-c", "import os,sys,time; p='/tmp/campusbite-worker-heartbeat'; sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 3*int(os.environ.get('ORDER_REMINDER_CHECK_INTERVAL_SECONDS') or 60) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     stop_signal: SIGTERM
     stop_grace_period: 30s
     depends_on:
@@ -87,7 +94,13 @@ services:
     container_name: campusbite-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     ports:
       - "3000:80"   # http://localhost:3000 (in the backend's default CORS_ORIGINS)
 

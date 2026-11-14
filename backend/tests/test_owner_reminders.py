@@ -12,7 +12,7 @@ from app.models import ReminderLog, ReminderType
 from app.services import reminder_service as rs
 from app.services.notifications import MockNotifier
 from app.worker import build_scheduler, run_once
-from tests.conftest import deliver, pay, place_order, set_status
+from tests.conftest import STAFF_KEY, deliver, pay, place_order, set_status
 
 R = "/api/v1/owner/reminders"
 LATER = timedelta(minutes=16)
@@ -61,15 +61,21 @@ def test_status_updated_at_tracks_status_changes_only(client, owner, customer, c
     pay(client, customer, oid)
     placed = order(client, customer, oid)["status_updated_at"]
     assert placed > created["status_updated_at"]
-    for s in ("accepted", "preparing", "ready_for_pickup"):
+    for s in ("accepted", "preparing", "ready"):
         set_status(client, owner, oid, s)
     ready = order(client, customer, oid)["status_updated_at"]
     assert ready > placed
 
     cid = client.get("/api/v1/auth/me", headers=courier).json()["id"]
     client.post(f"/api/v1/orders/{oid}/assign-delivery", json={"delivery_partner_id": cid}, headers=owner)
+    assigned = order(client, customer, oid)
+    assert assigned["status"] == "assigned" and assigned["status_updated_at"] > ready
+    # swapping the courier is NOT a status change: the timer must not reset
+    other = client.post("/api/v1/auth/register", json={"email": "c9@example.com", "password": "password123",
+                        "name": "C9", "role": "delivery_partner"}, headers={"X-Registration-Key": STAFF_KEY}).json()["id"]
+    client.post(f"/api/v1/orders/{oid}/assign-delivery", json={"delivery_partner_id": other}, headers=owner)
     after = order(client, customer, oid)
-    assert after["delivery_partner_id"] == cid and after["status_updated_at"] == ready  # unrelated change
+    assert after["delivery_partner_id"] == other and after["status_updated_at"] == assigned["status_updated_at"]
 
 
 # ------------------------------------------------------------------ generation rules
@@ -117,7 +123,7 @@ def test_new_eligible_status_period_reminds_again(client, db, owner, customer, r
 
 def test_ineligible_orders_never_get_stale_reminders(client, db, owner, customer, courier, restaurant):
     place_order(client, customer, restaurant)  # pending_payment
-    for path in (["accepted", "preparing"], ["accepted", "preparing", "ready_for_pickup"], ["rejected"]):
+    for path in (["accepted", "preparing"], ["accepted", "preparing", "ready"], ["rejected"]):
         oid = paid_order(client, customer, restaurant)
         for s in path:
             set_status(client, owner, oid, s)

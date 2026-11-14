@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
-from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError
@@ -264,8 +263,9 @@ def test_role_gates_return_403_for_valid_users_and_401_for_anonymous(client, own
     assert client.post("/api/v1/orders", json=order_body).status_code == 401
     oid = client.post("/api/v1/orders", json=order_body, headers=customer).json()["id"]
     assert client.post(f"/api/v1/payments/orders/{oid}/pay", json={"method": "upi"}, headers=courier).status_code == 403
-    assert client.post(f"/api/v1/orders/{oid}/claim", headers=customer).status_code == 403
-    assert client.post(f"/api/v1/orders/{oid}/claim", headers=owner).status_code == 403
+    body = {"delivery_partner_id": str(uuid.uuid4())}
+    assert client.post(f"/api/v1/orders/{oid}/assign-delivery", json=body, headers=customer).status_code == 403
+    assert client.post(f"/api/v1/orders/{oid}/assign-delivery", json=body, headers=courier).status_code == 403
 
 
 def test_restaurant_ownership_is_enforced_for_every_write(client, make_user, restaurant):
@@ -304,7 +304,7 @@ def test_services_enforce_roles_even_when_called_without_a_route():
     with pytest.raises(ForbiddenError):
         order_service.create_order(None, owner, None)
     with pytest.raises(ForbiddenError):
-        order_service.claim_order(None, customer, uuid.uuid4())
+        order_service.assign_delivery(None, customer, uuid.uuid4(), uuid.uuid4())
 
 
 # ------------------------------------------------------------------ Swagger / OpenAPI
@@ -317,3 +317,14 @@ def test_openapi_declares_the_oauth2_password_flow(client):
     assert flow["tokenUrl"] == "/api/v1/auth/login"
     register_params = spec["paths"]["/api/v1/auth/register"]["post"]["parameters"]
     assert any(p["name"].lower() == "x-registration-key" for p in register_params)
+
+
+def test_cors_wildcard_is_rejected():
+    """allow_credentials=True + '*' would let any website use a victim's token."""
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(CORS_ORIGINS="http://localhost:3000, *", DATABASE_URL="sqlite://")
+    assert Settings(CORS_ORIGINS="http://localhost:3000", DATABASE_URL="sqlite://").cors_origins_list == ["http://localhost:3000"]

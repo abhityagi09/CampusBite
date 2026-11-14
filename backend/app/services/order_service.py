@@ -78,11 +78,7 @@ def can_view(order: Order, user: User) -> bool:
     if user.role == UserRole.OWNER:
         return order.restaurant.owner_id == user.id
     if user.role == UserRole.DELIVERY_PARTNER:
-        unclaimed_ready = (
-            order.status == OrderStatus.READY_FOR_PICKUP
-            and order.delivery_partner_id is None
-        )
-        return order.delivery_partner_id == user.id or unclaimed_ready
+        return order.delivery_partner_id == user.id  # assigned orders only
     return False
 
 
@@ -385,6 +381,12 @@ def update_status(
         kind = Actor.COURIER
     else:
         raise ForbiddenError("Customers can only cancel their own orders")
+    if new_status in lifecycle.NOT_VIA_STATUS_ENDPOINT:
+        raise ConflictError(
+            "Use POST /orders/{id}/assign-delivery to assign a courier"
+            if new_status == OrderStatus.ASSIGNED
+            else "Orders become refunded only when a refund request is approved"
+        )
     return _transition(db, order, actor, new_status, kind)
 
 
@@ -403,7 +405,13 @@ def assign_delivery(db: Session, owner: User, order_id: UUID, partner_id: UUID) 
         raise UnprocessableError("Not an active delivery partner")
     if order.delivery_partner_id == partner.id:
         return reload_order(db, order.id)  # idempotent
-    lifecycle.compare_and_set(db, order, order.status, delivery_partner_id=partner.id)
+    if order.status == OrderStatus.READY:  # READY -> ASSIGNED, atomically with the courier
+        lifecycle.check_transition(order.status, OrderStatus.ASSIGNED, Actor.OWNER)
+        lifecycle.compare_and_set(db, order, OrderStatus.READY, status=OrderStatus.ASSIGNED,
+                                  status_updated_at=utcnow(), delivery_partner_id=partner.id)
+        apply_status(order, OrderStatus.ASSIGNED, owner)  # audit event
+    else:  # ASSIGNED: swap the courier before pickup; status period unchanged
+        lifecycle.compare_and_set(db, order, order.status, delivery_partner_id=partner.id)
     db.commit()
     return reload_order(db, order.id)
 
@@ -428,21 +436,6 @@ def list_my_deliveries(
         limit=page.limit,
         offset=page.offset,
     )
-
-
-def claim_order(db: Session, partner: User, order_id: UUID) -> Order:
-    ensure_role(partner, UserRole.DELIVERY_PARTNER)
-    # Row lock: if two couriers claim at once, the second sees the first one's claim.
-    order = load_order(db, order_id, lock=True)
-    if order is None or not can_view(order, partner):
-        if order is not None and order.delivery_partner_id is not None:
-            raise ConflictError("This order has already been claimed")
-        raise NotFoundError("Order not found")
-    if order.status != OrderStatus.READY_FOR_PICKUP:
-        raise ConflictError("Order is not ready for pickup")
-    order.delivery_partner_id = partner.id
-    db.commit()
-    return reload_order(db, order_id)
 
 
 # ---- listings --------------------------------------------------------------
@@ -476,18 +469,3 @@ def list_orders(
         stmt = stmt.where(Order.status == status)
     stmt = _date_range(stmt, created_from, created_to)
     return list(db.scalars(stmt.limit(limit).offset(offset)).all())
-
-
-def list_available_orders(db: Session, limit: int, offset: int) -> list[Order]:
-    stmt = (
-        select(Order)
-        .options(selectinload(Order.items))
-        .where(
-            Order.status == OrderStatus.READY_FOR_PICKUP,
-            Order.delivery_partner_id.is_(None),
-        )
-        .order_by(Order.updated_at, Order.id)
-        .limit(limit)
-        .offset(offset)
-    )
-    return list(db.scalars(stmt).all())

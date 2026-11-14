@@ -7,13 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import RefundStatus
 
 
-class RefundRequestCreate(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    order_id: UUID
-    reason: str = Field(min_length=1, max_length=2000)
-
-
 class RefundRequestBody(BaseModel):
     """POST /orders/{id}/refund-requests: the order comes from the URL."""
 

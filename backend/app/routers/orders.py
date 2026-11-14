@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
-from app.dependencies import CurrentUser, CustomerUser, DbSession, DeliveryUser, OwnerUser
+from app.dependencies import CurrentUser, CustomerUser, DbSession, OwnerUser
 from app.dependencies.query import PageParams
 from app.models import OrderStatus
 from app.schemas.order import (
@@ -96,18 +96,6 @@ def list_orders(
     return svc.list_orders(db, user, status_filter, limit, offset, created_from, created_to)
 
 
-# Must be declared before "/{order_id}"
-@router.get("/available", response_model=list[OrderRead])
-def available_orders(
-    db: DbSession,
-    partner: DeliveryUser,
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-):
-    """Ready-for-pickup orders that no courier has claimed yet."""
-    return svc.list_available_orders(db, limit, offset)
-
-
 @router.get("/{order_id}", response_model=OrderDetail)
 def get_order(order_id: UUID, db: DbSession, user: CurrentUser):
     return svc.get_order_for_user(db, order_id, user)
@@ -128,7 +116,7 @@ def track_order(order_id: UUID, db: DbSession, user: CurrentUser):
 def update_status(
     order_id: UUID, data: OrderStatusUpdate, db: DbSession, user: CurrentUser
 ):
-    """Owner: accepted / rejected / preparing / ready_for_pickup.
+    """Owner: accepted / rejected / preparing / ready.
     Assigned delivery partner: out_for_delivery / delivered."""
     return svc.update_status(db, user, order_id, data.status)
 
@@ -140,10 +128,5 @@ def cancel_order(order_id: UUID, db: DbSession, customer: CustomerUser):
 
 @router.post("/{order_id}/assign-delivery", response_model=OrderDetail)
 def assign_delivery(order_id: UUID, data: AssignDelivery, db: DbSession, owner: OwnerUser):
-    """Restaurant owner assigns an active delivery partner (accepted .. ready_for_pickup)."""
+    """Restaurant owner assigns an active delivery partner (accepted .. ready)."""
     return svc.assign_delivery(db, owner, order_id, data.delivery_partner_id)
-
-
-@router.post("/{order_id}/claim", response_model=OrderDetail)
-def claim_order(order_id: UUID, db: DbSession, partner: DeliveryUser):
-    return svc.claim_order(db, partner, order_id)

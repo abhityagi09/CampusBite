@@ -11,12 +11,12 @@ import { ORDER_STATUS, dateTime, money } from "../../utils/format";
 
 // Only the ASSIGNED courier may do these (backend: order_lifecycle.py).
 const NEXT = {
-  ready_for_pickup: ["out_for_delivery", "Picked up – out for delivery"],
+  assigned: ["out_for_delivery", "Picked up – out for delivery"],
   out_for_delivery: ["delivered", "Mark delivered"],
 };
 const TABS = [
   ["", "All assigned"],
-  ["ready_for_pickup", "Assigned · ready"],
+  ["assigned", "Assigned to me"],
   ["out_for_delivery", "Out for delivery"],
   ["delivered", "Delivered (history)"],
 ];
